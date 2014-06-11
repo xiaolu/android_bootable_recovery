@@ -85,6 +85,10 @@ ifeq ($(RECOVERY_NEED_SELINUX_FIX),true)
   LOCAL_CFLAGS += -DNEED_SELINUX_FIX
 endif
 
+ifeq ($(RECOVERY_USE_VIRTUAL_KEY),true)
+  LOCAL_CFLAGS += -DUSE_VIRTUAL_KEY
+endif
+
 BOARD_RECOVERY_CHAR_WIDTH := $(shell echo $(BOARD_USE_CUSTOM_RECOVERY_FONT) | cut -d _  -f 2 | cut -d . -f 1 | cut -d x -f 1)
 BOARD_RECOVERY_CHAR_HEIGHT := $(shell echo $(BOARD_USE_CUSTOM_RECOVERY_FONT) | cut -d _  -f 2 | cut -d . -f 1 | cut -d x -f 2)
 RECOVERY_BUILD_DATE := $(shell date +"%Y%m%d")
