@@ -57,6 +57,7 @@ static int gShowBackButton = 0;
 #define UI_WAIT_KEY_TIMEOUT_SEC    3600
 #define UI_KEY_REPEAT_INTERVAL 80
 #define UI_KEY_WAIT_REPEAT 400
+#define UI_MIN_PROG_DELTA_MS 200
 
 UIParameters ui_parameters = {
     6,       // indeterminate progress bar frames
@@ -140,6 +141,7 @@ static volatile char key_pressed[KEY_MAX + 1];
 
 static void update_screen_locked(void);
 
+
 // Return the current time as a double (including fractions of a second).
 static double now() {
     struct timeval tv;
@@ -195,11 +197,28 @@ static void draw_background_locked(int icon)
     }
 }
 
+void ui_increment_frame() {
+    if (!ui_has_initialized) return;
+    gInstallingFrame =
+        (gInstallingFrame + 1) % ui_parameters.installing_frames;
+}
+
+static long delta_milliseconds(struct timeval from, struct timeval to) {
+    long delta_sec = (to.tv_sec - from.tv_sec)*1000;
+    long delta_usec = (to.tv_usec - from.tv_usec)/1000;
+    return (delta_sec + delta_usec);
+}
+
+static struct timeval lastprogupd = (struct timeval) {0};
+
 // Draw the progress bar (if any) on the screen.  Does not flip pages.
-// Should only be called with gUpdateMutex locked.
+// Should only be called with gUpdateMutex locked and if ui_has_initialized is true
 static void draw_progress_locked()
 {
     if (gCurrentIcon == BACKGROUND_ICON_INSTALLING) {
+        // update the installation animation, if active
+        if (ui_parameters.installing_frames > 0)
+            ui_increment_frame();
         draw_install_overlay_locked(gInstallingFrame);
     }
 
@@ -233,6 +252,8 @@ static void draw_progress_locked()
             frame = (frame + 1) % ui_parameters.indeterminate_frames;
         }
     }
+
+    gettimeofday(&lastprogupd, NULL);
 }
 
 #ifdef USE_VIRTUAL_KEY
@@ -271,7 +292,6 @@ static void draw_text_line(int row, const char* t, int align) {
                 break;
         }
         gr_text(col, (row+1)*CHAR_HEIGHT-1, t, 0);
-        //gr_text(col, (row+1)*CHAR_HEIGHT-(CHAR_HEIGHT-BOARD_RECOVERY_CHAR_HEIGHT)/2-1, t);
     }
 }
 
@@ -305,20 +325,17 @@ static void draw_screen_locked(void)
         int j = 0;
         int row = 0;            // current row that we are drawing on
         if (show_menu) {
-            gr_color(MENU_TEXT_COLOR);
+            gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
             int batt_level = 0;
             batt_level = get_batt_stats();
             if (batt_level < 21) {
                 gr_color(255, 0, 0, 255);
             }
             
-            /*
-            struct tm *current;
-            time_t now;
-            now = time(NULL); // add 2 hours
-            current = localtime(&now);
-            */
-            
+            //struct tm *current;
+            //time_t now;
+            //now = time(NULL); // add 2 hours
+            //current = localtime(&now);
             char batt_text[40];
             //sprintf(batt_text, "[%d%% %02D:%02D]", batt_level, current->tm_hour, current->tm_min);
             
@@ -326,7 +343,7 @@ static void draw_screen_locked(void)
                 sprintf(batt_text, " [%d%%]", batt_level);
             //}
 
-            gr_color(MENU_TEXT_COLOR);
+            gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
             draw_text_line(0, batt_text, RIGHT_ALIGN);
 
             gr_fill(0, (menu_top + menu_sel - menu_show_start) * CHAR_HEIGHT,
@@ -395,6 +412,17 @@ static void update_screen_locked(void)
 static void update_progress_locked(void)
 {
     if (!ui_has_initialized) return;
+
+    // set minimum delay between progress updates if we have a text overlay
+    // exception: gProgressScopeDuration != 0: to keep zip installer refresh behavior
+    struct timeval curtime;
+    gettimeofday(&curtime, NULL);
+    long delta_ms = delta_milliseconds(lastprogupd, curtime);
+    if (show_text && gProgressScopeDuration == 0 && lastprogupd.tv_sec > 0
+            && delta_ms < UI_MIN_PROG_DELTA_MS) {
+        return;
+    }
+
     if (show_text || !gPagesIdentical) {
         draw_screen_locked();    // Must redraw the whole screen
         gPagesIdentical = 1;
@@ -414,30 +442,25 @@ static void *progress_thread(void *cookie)
 
         int redraw = 0;
 
-        // update the installation animation, if active
-        // skip this if we have a text overlay (too expensive to update)
-        if (gCurrentIcon == BACKGROUND_ICON_INSTALLING &&
-            ui_parameters.installing_frames > 0 &&
-            !show_text) {
-            gInstallingFrame =
-                (gInstallingFrame + 1) % ui_parameters.installing_frames;
-            redraw = 1;
-        }
-
         // update the progress bar animation, if active
-        // skip this if we have a text overlay (too expensive to update)
-        if (gProgressBarType == PROGRESSBAR_TYPE_INDETERMINATE && !show_text) {
+        // update the spinning cube animation, even if no progress bar
+        if (gProgressBarType == PROGRESSBAR_TYPE_INDETERMINATE ||
+                gProgressBarType == PROGRESSBAR_TYPE_NONE) {
             redraw = 1;
         }
 
         // move the progress bar forward on timed intervals, if configured
         int duration = gProgressScopeDuration;
-        if (gProgressBarType == PROGRESSBAR_TYPE_NORMAL && duration > 0) {
-            double elapsed = now() - gProgressScopeTime;
-            float progress = 1.0 * elapsed / duration;
-            if (progress > 1.0) progress = 1.0;
-            if (progress > gProgress) {
-                gProgress = progress;
+        if (gProgressBarType == PROGRESSBAR_TYPE_NORMAL) {
+            if (duration > 0) {
+                double elapsed = now() - gProgressScopeTime;
+                float progress = 1.0 * elapsed / duration;
+                if (progress > 1.0) progress = 1.0;
+                if (progress > gProgress) {
+                    gProgress = progress;
+                    redraw = 1;
+                }
+            } else if (gCurrentIcon == BACKGROUND_ICON_INSTALLING) {
                 redraw = 1;
             }
         }
@@ -495,12 +518,14 @@ static int input_callback(int fd, short revents, void *data)
     struct input_event ev;
     int ret;
     int fake_key = 0;
-#ifdef USE_VIRTUAL_KEY
-    ui_set_virtualkey_size();
-#endif
+
     ret = ev_get_input(fd, revents, &ev);
     if (ret)
         return -1;
+
+#ifdef USE_VIRTUAL_KEY
+    ui_set_virtualkey_size();
+#endif
 
     if (ev.type == EV_SYN) {
         s_cur_slot = 0;
@@ -848,22 +873,6 @@ void ui_reset_progress()
     pthread_mutex_unlock(&gUpdateMutex);
 }
 
-static long delta_milliseconds(struct timeval from, struct timeval to) {
-    long delta_sec = (to.tv_sec - from.tv_sec)*1000;
-    long delta_usec = (to.tv_usec - from.tv_usec)/1000;
-    return (delta_sec + delta_usec);
-}
-
-static struct timeval lastupdate = (struct timeval) {0};
-static int ui_nice = 0;
-static int ui_niced = 0;
-void ui_set_nice(int enabled) {
-    ui_nice = enabled;
-}
-#define NICE_INTERVAL 100
-int ui_was_niced() {
-    return ui_niced;
-}
 int ui_get_text_cols() {
     return text_cols;
 }
@@ -879,22 +888,8 @@ void ui_print(const char *fmt, ...)
     if (ui_log_stdout)
         fputs(buf, stdout);
 
-    // if we are running 'ui nice' mode, we do not want to force a screen update
-    // for this line if not necessary.
-    ui_niced = 0;
-    if (ui_nice) {
-        struct timeval curtime;
-        gettimeofday(&curtime, NULL);
-        long ms = delta_milliseconds(lastupdate, curtime);
-        if (ms < NICE_INTERVAL && ms >= 0) {
-            ui_niced = 1;
-            return;
-        }
-    }
-
     // This can get called before ui_init(), so be careful.
     pthread_mutex_lock(&gUpdateMutex);
-    gettimeofday(&lastupdate, NULL);
     if (text_rows > 0 && text_cols > 0) {
         char *ptr;
 #ifdef USE_CHINESE_FONT
@@ -1282,12 +1277,6 @@ void ui_delete_line() {
     text_row = (text_row - 1 + text_rows) % text_rows;
     text_col = 0;
     pthread_mutex_unlock(&gUpdateMutex);
-}
-
-void ui_increment_frame() {
-    if (!ui_has_initialized) return;
-    gInstallingFrame =
-        (gInstallingFrame + 1) % ui_parameters.installing_frames;
 }
 
 int ui_get_rainbow_mode() {
