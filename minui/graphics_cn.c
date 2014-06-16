@@ -114,13 +114,21 @@ static int get_framebuffer(GGLSurface *fb)
         return -1;
     }
 
-    fprintf(stderr, "Pixel format: %dx%d @ %dbpp\n", vi.xres, vi.yres, vi.bits_per_pixel);
-
     if (ioctl(fd, FBIOGET_FSCREENINFO, &fi) < 0) {
         perror("failed to get fb0 info");
         close(fd);
         return -1;
     }
+
+    fprintf(stdout, "fb0 reports (possibly inaccurate):\n"
+           "  vi.bits_per_pixel = %d\n"
+           "  vi.red.offset   = %3d   .length = %3d\n"
+           "  vi.green.offset = %3d   .length = %3d\n"
+           "  vi.blue.offset  = %3d   .length = %3d\n",
+           vi.bits_per_pixel,
+           vi.red.offset, vi.red.length,
+           vi.green.offset, vi.green.length,
+           vi.blue.offset, vi.blue.length);
 
     has_overlay = target_has_overlay(fi.id);
 
