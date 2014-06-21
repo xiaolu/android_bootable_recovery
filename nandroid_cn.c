@@ -47,6 +47,7 @@
 #include "minzip/DirUtil.h"
 #include "mounts.h"
 #include "nandroid.h"
+#include "nandroid_md5.h"
 #include "recovery_settings.h"
 #include "recovery_ui.h"
 #include "roots.h"
@@ -583,11 +584,8 @@ int nandroid_backup(const char* backup_path) {
             return print_and_error(NULL, ret);
     }
 
-    ui_print("创建md5校验文件...\n");
-    sprintf(tmp, "nandroid-md5.sh %s", backup_path);
-    if (0 != (ret = __system(tmp))) {
-        return print_and_error("创建md5校验文件时出错!\n", ret);
-    }
+    if (0 != (ret = nandroid_backup_md5_gen(backup_path)))
+        return print_and_error(NULL, ret);
 
     sprintf(tmp, "cp /tmp/recovery.log %s/recovery.log", backup_path);
     __system(tmp);
@@ -940,6 +938,7 @@ int nandroid_restore(const char* backup_path, unsigned char flags) {
     ui_set_background(BACKGROUND_ICON_INSTALLING);
     ui_show_indeterminate_progress();
     nandroid_files_total = 0;
+    int ret;
 
     int restore_boot = ((flags & NANDROID_BOOT) == NANDROID_BOOT);
     int restore_system = ((flags & NANDROID_SYSTEM) == NANDROID_SYSTEM);
@@ -958,13 +957,9 @@ int nandroid_restore(const char* backup_path, unsigned char flags) {
     if (0 == stat("/sdcard/clockworkmod/.no_md5sum", &s))
         ui_print("跳过文件MD5校验...\n");
     else {
-        ui_print("检验文件md5值...\n");
-        sprintf(tmp, "cd %s && md5sum -c nandroid.md5", backup_path);
-        if (0 != __system(tmp))
-            return print_and_error("MD5校验失败!\n", NANDROID_ERROR_GENERAL);
+        if (0 != (ret = nandroid_restore_md5_check(backup_path, flags)))
+            return print_and_error(NULL, ret);
     }
-
-    int ret;
 
     if (restore_boot && NULL != volume_for_path("/boot") && 0 != (ret = nandroid_restore_partition(backup_path, "/boot")))
         return print_and_error(NULL, ret);

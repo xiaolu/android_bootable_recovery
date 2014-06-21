@@ -27,6 +27,7 @@ LOCAL_SRC_FILES := \
     mounts.c \
     extendedcommands$(src_suffix).c \
     nandroid$(src_suffix).c \
+    nandroid_md5$(src_suffix).c \
     reboot.c \
     ../../system/core/toolbox/dynarray.c \
     ../../system/core/toolbox/newfs_msdos.c \
@@ -106,7 +107,7 @@ LOCAL_STATIC_LIBRARIES :=
 
 LOCAL_CFLAGS += -DUSE_EXT4 -DMINIVOLD
 LOCAL_C_INCLUDES += system/extras/ext4_utils system/core/fs_mgr/include external/fsck_msdos
-LOCAL_C_INCLUDES += system/vold external/libselinux/include
+LOCAL_C_INCLUDES += system/vold external/openssl/include
 
 LOCAL_STATIC_LIBRARIES += libext4_utils_static libz libsparse_static
 
@@ -162,6 +163,7 @@ LOCAL_STATIC_LIBRARIES += libminui libpixelflinger_static libpng libcutils liblo
 LOCAL_STATIC_LIBRARIES += libstdc++ libc
 
 LOCAL_STATIC_LIBRARIES += libselinux
+LOCAL_STATIC_LIBRARIES += libcrypto_static
 
 include $(BUILD_EXECUTABLE)
 
@@ -201,14 +203,6 @@ $(RECOVERY_BUSYBOX_SYMLINKS): $(LOCAL_INSTALLED_MODULE)
 	$(hide) ln -sf $(BUSYBOX_BINARY) $@
 
 ALL_DEFAULT_INSTALLED_MODULES += $(RECOVERY_BUSYBOX_SYMLINKS) 
-
-include $(CLEAR_VARS)
-LOCAL_MODULE := nandroid-md5.sh
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
-LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
-LOCAL_SRC_FILES := nandroid-md5.sh
-include $(BUILD_PREBUILT)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := killrecovery.sh
