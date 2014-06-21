@@ -78,8 +78,6 @@ static gr_surface gVirtualKeys; // surface for our virtual key buttons
 #endif
 static int ui_has_initialized = 0;
 static int ui_log_stdout = 1;
-static unsigned int vkey_height = 0;
-static unsigned int vkey_width = 0;
 
 static int boardEnableKeyRepeat = 0;
 static int boardRepeatableKeys[64], boardNumRepeatableKeys = 0;
@@ -102,6 +100,121 @@ static const struct { gr_surface* surface; const char *name; } BITMAPS[] = {
 
 static int gCurrentIcon = 0;
 static int gInstallingFrame = 0;
+
+//semi touch code
+static int rel_sum = 0;
+static int slide_right = 0;
+static int slide_left = 0;
+static int s_tracking_id = -1;
+static int s_cur_slot = 0;
+static unsigned int touch_x = 0;
+static unsigned int touch_y = 0;
+static unsigned int old_x = 0;
+static unsigned int old_y = 0;
+static int diff_x = 0;
+static int diff_y = 0;
+static int min_x_swipe_px = 100;
+static int min_y_swipe_px = 80;
+static int input_button_has_draw = 0;
+static unsigned int vkey_height = 0;
+static unsigned int vkey_width = 0;
+
+static int get_batt_stats(void)
+{
+    static int level = -1;
+
+    char value[4];
+    FILE * capacity;
+    if ( (capacity = fopen("/sys/class/power_supply/battery/capacity","r")) ) {
+        fgets(value, 4, capacity);
+        fclose(capacity);
+    } else if ( (capacity = fopen("/sys/devices/platform/android-battery/power_supply/android-battery/capacity","r")) ) {
+        fgets(value, 4, capacity);
+        fclose(capacity);
+    }
+    level = atoi(value);
+    if (level > 100)
+        level = 100;
+    if (level < 0)
+        level = 0;
+    return level;
+}
+
+static void set_min_swipe_lengths() {
+    char value[PROPERTY_VALUE_MAX];
+    property_get("ro.sf.lcd_density", value, "0");
+    int screen_density = atoi(value);
+    if(screen_density > 0) {
+        min_x_swipe_px = (int)(0.5 * screen_density); // Roughly 0.5in
+        min_y_swipe_px = (int)(0.25 * screen_density); // Roughly 0.25in
+        fprintf(stdout, "min_x_swipe_px=%d,min_y_swipe_px=%d\n", min_x_swipe_px, min_y_swipe_px);
+    }
+}
+
+static void reset_gestures() {
+    diff_x = 0;
+    diff_y = 0;
+    old_x  = 0;
+    old_y  = 0;
+    touch_x = 0;
+    touch_y = 0;
+    ui_clear_key_queue();
+}
+
+#ifdef USE_VIRTUAL_KEY
+static void ui_set_virtualkey_size() {
+    if (vkey_height == 0) {
+        gr_surface surface = gVirtualKeys;
+        vkey_height = gr_get_height(surface);
+        vkey_width = gr_get_width(surface);
+    }
+}
+
+static int input_buttons()
+{
+    int final_code = 0;
+    if (gCurrentIcon == BACKGROUND_ICON_INSTALLING) return final_code;
+    //gr_surface surface = gVirtualKeys;
+    if (touch_y >= (gr_fb_height() - vkey_height) && touch_x > 0) {
+        int start_draw = 0;
+        int end_draw = 0;
+        unsigned int keywidth = vkey_width / 4;
+        unsigned int keyoffset = (gr_fb_width() - vkey_width) / 2;
+        if (touch_x < (keywidth + keyoffset + 1)) {
+            //down button
+            final_code = KEY_VOLUMEDOWN;
+            start_draw = keyoffset;
+            end_draw = keywidth + keyoffset;
+        } else if (touch_x < ((keywidth * 2) + keyoffset + 1)) {
+            //up button
+            final_code = KEY_VOLUMEUP;
+            start_draw = keywidth + keyoffset + 1;
+            end_draw = (keywidth * 2) + keyoffset;
+        } else if (touch_x < ((keywidth * 3) + keyoffset + 1)) {
+            //back button
+            final_code = KEY_BACK;
+            start_draw = (keywidth * 2) + keyoffset + 1;
+            end_draw = (keywidth * 3) + keyoffset;
+            //if (ui_root_menu) return final_code;
+        } else if (touch_x < ((keywidth * 4) + keyoffset + 1)) {
+            //enter key
+            final_code = KEY_POWER;
+            start_draw = (keywidth * 3) + keyoffset + 1;
+            end_draw = (keywidth * 4) + keyoffset;
+        } else
+
+            return final_code;
+
+        pthread_mutex_lock(&gUpdateMutex);
+        gr_color(200, 200, 200, 100);
+        gr_fill(start_draw, gr_fb_height()-vkey_height, end_draw, gr_fb_height());
+        gr_flip();
+        pthread_mutex_unlock(&gUpdateMutex);
+        input_button_has_draw = 1;
+    }
+    return final_code;
+}
+#endif
 
 static enum ProgressBarType {
     PROGRESSBAR_TYPE_NONE,
@@ -266,6 +379,12 @@ static void draw_virtualkeys_locked()
     int iconHeight = gr_get_height(surface);
     int iconX = (gr_fb_width() - iconWidth) / 2;
     int iconY = (gr_fb_height() - iconHeight);
+    //clear virtual key area.
+    gr_color(0, 0, 0, 255);
+    gr_fill(0, gr_fb_height()-iconHeight, gr_fb_width(), gr_fb_height());
+    //draw virtual key area background.
+    gr_blit(gBackground, 0, 0, iconWidth, iconHeight, iconX, iconY);
+    //draw virtual key.
     gr_blit(surface, 0, 0, iconWidth, iconHeight, iconX, iconY);
 }
 #endif
@@ -475,42 +594,6 @@ static void *progress_thread(void *cookie)
     return NULL;
 }
 
-static int rel_sum = 0;
-static int slide_right = 0;
-static int slide_left = 0;
-static int s_tracking_id = -1;
-static int s_cur_slot = 0;
-static unsigned int touch_x = 0;
-static unsigned int touch_y = 0;
-static unsigned int old_x = 0;
-static unsigned int old_y = 0;
-static int diff_x = 0;
-static int diff_y = 0;
-static int min_x_swipe_px = 100;
-static int min_y_swipe_px = 80;
-static int input_button_has_draw = 0;
-
-static void set_min_swipe_lengths() {
-    char value[PROPERTY_VALUE_MAX];
-    property_get("ro.sf.lcd_density", value, "0");
-    int screen_density = atoi(value);
-    if(screen_density > 0) {
-        min_x_swipe_px = (int)(0.5 * screen_density); // Roughly 0.5in
-        min_y_swipe_px = (int)(0.25 * screen_density); // Roughly 0.25in
-        fprintf(stdout, "min_x_swipe_px=%d,min_y_swipe_px=%d\n", min_x_swipe_px, min_y_swipe_px);
-    }
-}
-
-static void reset_gestures() {
-    diff_x = 0;
-    diff_y = 0;
-    old_x  = 0;
-    old_y  = 0;
-    touch_x = 0;
-    touch_y = 0;
-    ui_clear_key_queue();
-}
-
 static int input_callback(int fd, short revents, void *data)
 {
     struct input_event ev;
@@ -575,7 +658,7 @@ static int input_callback(int fd, short revents, void *data)
                 if (touch_y < (gr_fb_height() - vkey_height)) {
                     if(slide_right == 1) {
                         ev.type = EV_KEY;
-                        ev.code = KEY_POWER;
+                        ev.code = KEY_ENTER;
                         ev.value = 1;
                         slide_right = 0;
                     } else if(slide_left == 1) {
@@ -592,10 +675,11 @@ static int input_callback(int fd, short revents, void *data)
                     ev.value = 1;
                     vibrate(VIBRATOR_TIME_MS);
                 }
-                //clear input_button
+                //clear button pressed down effect.
                 if (input_button_has_draw == 1) {
                     pthread_mutex_lock(&gUpdateMutex);
                     draw_virtualkeys_locked();
+                    gr_flip();
                     pthread_mutex_unlock(&gUpdateMutex);
                     input_button_has_draw = 0;
                 }
@@ -1302,83 +1386,3 @@ void ui_set_rainbow_mode(int rainbowMode) {
     pthread_mutex_unlock(&gUpdateMutex);
 }
 
-int get_batt_stats(void)
-{
-    static int level = -1;
-
-    char value[4];
-    FILE * capacity;
-    if ( (capacity = fopen("/sys/class/power_supply/battery/capacity","r")) ) {
-        fgets(value, 4, capacity);
-        fclose(capacity);
-    } else if ( (capacity = fopen("/sys/devices/platform/android-battery/power_supply/android-battery/capacity","r")) ) {
-        fgets(value, 4, capacity);
-        fclose(capacity);    
-    }
-    level = atoi(value);
-    if (level > 100)
-        level = 100;
-    if (level < 0)
-        level = 0;
-    return level;
-}
-
-#ifdef USE_VIRTUAL_KEY
-int input_buttons()
-{
-    int final_code = 0;
-    //gr_surface surface = gVirtualKeys;
-    if (touch_y >= (gr_fb_height() - vkey_height) && touch_x > 0) {
-        int start_draw = 0;
-        int end_draw = 0;        
-        unsigned int keywidth = vkey_width / 4;
-        unsigned int keyoffset = (gr_fb_width() - vkey_width) / 2;
-        if (touch_x < (keywidth + keyoffset + 1)) {
-            //down button
-            final_code = KEY_VOLUMEDOWN;
-            start_draw = keyoffset;
-            end_draw = keywidth + keyoffset;
-        } else if (touch_x < ((keywidth * 2) + keyoffset + 1)) {
-            //up button
-            final_code = KEY_VOLUMEUP;
-            start_draw = keywidth + keyoffset + 1;
-            end_draw = (keywidth * 2) + keyoffset;
-        } else if (touch_x < ((keywidth * 3) + keyoffset + 1)) {
-            //back button
-            final_code = KEY_BACK;
-            start_draw = (keywidth * 2) + keyoffset + 1;
-            end_draw = (keywidth * 3) + keyoffset;
-            //if (ui_root_menu) return final_code;
-        } else if (touch_x < ((keywidth * 4) + keyoffset + 1)) {
-            //enter key
-            final_code = KEY_POWER;
-            start_draw = (keywidth * 3) + keyoffset + 1;
-            end_draw = (keywidth * 4) + keyoffset;
-        } else
-        {
-            return final_code;
-        }
-        pthread_mutex_lock(&gUpdateMutex);
-        //gr_color(0, 0, 0, 255);     // clear old touch points
-        //gr_fill(0, gr_fb_height()-gr_get_height(surface)-2, start_draw-1, gr_fb_height()-gr_get_height(surface));
-        //gr_fill(end_draw+1, gr_fb_height()-gr_get_height(surface)-2, gr_fb_width(), gr_fb_height()-gr_get_height(surface));
-        //gr_color(MENU_TEXT_COLOR);
-        //gr_fill(start_draw, gr_fb_height()-gr_get_height(surface)-2, end_draw, gr_fb_height()-gr_get_height(surface));
-        //gr_flip();
-        gr_color(MENU_TEXT_COLOR);
-        gr_fill(start_draw, gr_fb_height()-vkey_height, end_draw, gr_fb_height());
-        gr_flip();
-        pthread_mutex_unlock(&gUpdateMutex);
-        input_button_has_draw = 1;
-    }
-    return final_code;
-}
-
-void ui_set_virtualkey_size() {
-    if (vkey_height == 0) {
-        gr_surface surface = gVirtualKeys;
-        vkey_height = gr_get_height(surface);
-        vkey_width = gr_get_width(surface);
-    }
-}
-#endif
