@@ -501,8 +501,11 @@ static void show_nandroid_restore_menu(const char* path) {
     if (file == NULL)
         return;
 
-    if (confirm_selection("确认还原备份?", "是的,还原"))
-        nandroid_restore(file, 1, 1, 1, 1, 1, 0);
+    if (confirm_selection("确认还原备份?", "是的,还原")) {
+        unsigned char flags = NANDROID_BOOT | NANDROID_SYSTEM | NANDROID_DATA
+                              | NANDROID_CACHE | NANDROID_SDEXT;
+        nandroid_restore(file, flags);
+    }
 
     free(file);
 }
@@ -1023,9 +1026,53 @@ int show_partition_menu() {
     return chosen_item;
 }
 
+static void nandroid_adv_update_selections(char *str[], int listnum, unsigned char *flags) {
+    int len = strlen(str[listnum]);
+    if (str[listnum][len-2] == ' ') {
+        str[listnum][len-1] = ')';
+        str[listnum][len-2] = '+';
+        str[listnum][len-3] = '(';
+    } else {
+        str[listnum][len-1] = ' ';
+        str[listnum][len-2] = ' ';
+        str[listnum][len-3] = ' ';
+    }
+    switch(listnum) {
+        case 0:
+            *flags ^= NANDROID_BOOT;
+            break;
+        case 1:
+            *flags ^= NANDROID_SYSTEM;
+            break;
+        case 2:
+            *flags ^= NANDROID_DATA;
+            break;
+        case 3:
+            *flags ^= NANDROID_CACHE;
+            break;
+        case 4:
+            *flags ^= NANDROID_SDEXT;
+            break;
+        case 5:
+            *flags ^= NANDROID_WIMAX;
+            break;
+    }
+}
+
+static int empty_nandroid_bitmask(unsigned char flags) {
+    int ret = !(((flags & NANDROID_BOOT) == NANDROID_BOOT) ||
+                ((flags & NANDROID_SYSTEM) == NANDROID_SYSTEM) ||
+                ((flags & NANDROID_DATA) == NANDROID_DATA) ||
+                ((flags & NANDROID_CACHE) == NANDROID_CACHE) ||
+                ((flags & NANDROID_SDEXT) == NANDROID_SDEXT) ||
+                ((flags & NANDROID_WIMAX) == NANDROID_WIMAX));
+
+    return ret;
+}
+
 static void show_nandroid_advanced_restore_menu(const char* path) {
     if (ensure_path_mounted(path) != 0) {
-        LOGE("Can't mount sdcard\n");
+        LOGE("不能挂载sdcard\n");
         return;
     }
 
@@ -1042,67 +1089,63 @@ static void show_nandroid_advanced_restore_menu(const char* path) {
     if (file == NULL)
         return;
 
-    static const char* headers[] = { "高级还原菜单", "", NULL };
+    static const char* headers[] = { "高级恢复",
+                                     "",
+                                     "选择一个或多个映像恢复:",
+                                     NULL };
 
-    static char* list[] = { "还原boot",
-                            "还原system",
-                            "还原data",
-                            "还原cache",
-                            NULL,
-                            NULL,
-                            NULL };
+    int disable_wimax = 0;
+    if (0 != get_partition_device("wimax", tmp))
+        disable_wimax = 1;
 
-	int offset = 4;
-	int sdext=-1,wimax=-1;
-    if (NULL != volume_for_path("/sd-ext")) {
-        list[offset] = "还原 sd-ext";
-		sdext = offset;
-		offset++;
-    }
-    if (0 == get_partition_device("wimax", tmp)) {
-        list[offset] = "还原 wimax";
-		wimax = offset;
-		offset++;
-    }
-	list[offset+1] = NULL;
+    char *list[9 - disable_wimax];
+    // Dynamically allocated entries will have (+) added/removed to end
+    // Leave space at end of string  so terminator doesn't need to move
+    list[0] = malloc(sizeof("恢复 boot    "));
+    list[1] = malloc(sizeof("恢复 system    "));
+    list[2] = malloc(sizeof("恢复 data    "));
+    list[3] = malloc(sizeof("恢复 cache    "));
+    list[4] = malloc(sizeof("恢复 sd-ext    "));
+    if (!disable_wimax)
+        list[5] = malloc(sizeof("恢复 wimax    "));
+    list[6 - disable_wimax] = "开始恢复";
+    list[7 - disable_wimax] = NULL;
 
-    static char* confirm_restore  = "确认还原备份?";
+    sprintf(list[0], "恢复 boot    ");
+    sprintf(list[1], "恢复 system    ");
+    sprintf(list[2], "恢复 data    ");
+    sprintf(list[3], "恢复 cache    ");
+    sprintf(list[4], "恢复 sd-ext    ");
+    if (!disable_wimax)
+        sprintf(list[5], "恢复 wimax    ");
 
-    int chosen_item = get_menu_selection(headers, list, 0, 0);
-    switch (chosen_item) {
-        case 0: {
-            if (confirm_selection(confirm_restore, "是的,还原boot"))
-                nandroid_restore(file, 1, 0, 0, 0, 0, 0);
+    unsigned char flags = NANDROID_NONE;
+    int reload_menu;
+    int start_restore = 6-disable_wimax;
+    int chosen_item;
+
+    do {
+        reload_menu = 0;
+        chosen_item = get_menu_selection(headers, list, 0, 0);
+        if (chosen_item < 0 || chosen_item > start_restore)
             break;
+
+        if (chosen_item < start_restore) {
+            nandroid_adv_update_selections(list, chosen_item, &flags);
+        } else if ((chosen_item == start_restore) && empty_nandroid_bitmask(flags)) {
+            ui_print("没有选择备份!\n");
+            reload_menu = 1;
         }
-        case 1: {
-            if (confirm_selection(confirm_restore, "是的,还原system"))
-                nandroid_restore(file, 0, 1, 0, 0, 0, 0);
-            break;
-        }
-        case 2: {
-            if (confirm_selection(confirm_restore, "是的,还原data"))
-                nandroid_restore(file, 0, 0, 1, 0, 0, 0);
-            break;
-        }
-        case 3: {
-            if (confirm_selection(confirm_restore, "是的,还原cache"))
-                nandroid_restore(file, 0, 0, 0, 1, 0, 0);
-            break;
-        }
-        default: {
-			if (chosen_item == sdext) {
-				if (confirm_selection(confirm_restore, "是的,还原sdext"))
-					nandroid_restore(file, 0, 0, 0, 0, 1, 0);
-			} else if (chosen_item == wimax) {
-				if (confirm_selection(confirm_restore, "是的,还原wimax"))
-					nandroid_restore(file, 0, 0, 0, 0, 0, 1);
-			}
-            break;
-        }
-    }
+    } while ((chosen_item >=0 && chosen_item < start_restore) || reload_menu);
+
+    if (chosen_item == start_restore)
+        nandroid_restore(file, flags);
 
     free(file);
+    int i;
+    for (i = 0; i < (5-disable_wimax); i++) {
+        free(list[i]);
+    }
 }
 
 static void run_dedupe_gc() {
