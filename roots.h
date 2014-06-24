@@ -56,5 +56,6 @@ int is_data_media_preserved();
 
 #define MAX_NUM_MANAGED_VOLUMES 10
 
+int read_config_file(const char* config_file, const char *key, char *value, const char *value_def);
 void get_rom_name(char *rom_name);
 #endif  // RECOVERY_ROOTS_H_

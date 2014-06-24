@@ -22,23 +22,25 @@
 #include <unistd.h>
 #include <ctype.h>
 
+#include <fs_mgr.h>
 #include "mtdutils/mtdutils.h"
 #include "mounts.h"
 #include "roots.h"
 #include "common.h"
 #include "make_ext4fs.h"
 
-#include <fs_mgr.h>
 #include <libgen.h>
-#include "flashutils/flashutils.h"
-#include "extendedcommands.h"
-#include "recovery_ui.h"
 
+#include "extendedcommands.h"
+#include "flashutils/flashutils.h"
+#include "recovery_ui.h"
 #include "voldclient/voldclient.h"
 
 #include "cutils/properties.h"
 
 static struct fstab *fstab = NULL;
+
+extern struct selabel_handle *sehandle;
 
 int get_num_volumes() {
     return fstab->num_entries;
@@ -215,6 +217,30 @@ int is_data_media() {
     return !has_sdcard;
 }
 
+#ifdef USE_MIGRATED_STORAGE
+static int migrated_storage = 1;
+#else
+static int migrated_storage = -1;
+#endif
+
+static int use_migrated_storage() {
+    if (migrated_storage == -1) {
+        migrated_storage = 0;
+        if (ensure_path_mounted("/data") != 0)
+            return 0;
+        char android_ver[PROPERTY_VALUE_MAX];
+        if (read_config_file("/system/build.prop", "ro.build.version.release", android_ver, "4.1") < 0) {
+            ui_print("failed to open /system/build.prop!\n");
+            return 0;
+        }
+        struct stat s;
+	    if (strncmp(android_ver,"4.2",3) >= 0 && lstat("/data/media/0", &s) == 0)
+            migrated_storage = 1;
+    }
+
+    return migrated_storage;
+}
+
 void setup_data_media() {
     int i;
     char* mount_point = "/sdcard";
@@ -384,8 +410,6 @@ int ensure_path_unmounted(const char* path) {
 
     return unmount_mounted_volume(mv);
 }
-
-extern struct selabel_handle *sehandle;
 
 int format_volume(const char* volume) {
 #ifdef BOARD_NATIVE_DUALBOOT_SINGLEDATA
@@ -581,10 +605,10 @@ int read_config_file(const char* config_file, const char *key, char *value, cons
 static void format_filename(char *valid_path, int max_len) {
     // remove non allowed chars (invalid file names) and limit valid_path filename to max_len chars
     // we could use a whitelist: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-
-    char invalid_fn[] = " /><%#*^$:;\"\\\t,?!{}()=+'¦|";
+    char invalid_fn[] = " /><%#*^$:;\"\\\t,?!{}()=+'¦|&";
     int i = 0;
     for(i=0; valid_path[i] != '\0' && i < max_len; i++) {
-        int j = 0;
+        size_t j = 0;
         while (j < strlen(invalid_fn)) {
             if (valid_path[i] == invalid_fn[j])
                 valid_path[i] = '_';
@@ -593,12 +617,12 @@ static void format_filename(char *valid_path, int max_len) {
         if (valid_path[i] == 13)
             valid_path[i] = '_';
     }
+
     valid_path[max_len] = '\0';
     if (valid_path[strlen(valid_path)-1] == '_') {
         valid_path[strlen(valid_path)-1] = '\0';
     }
 }
-
 // get rom_name function
 #define MAX_ROM_NAME_LENGTH 31
 void get_rom_name(char *rom_name) {
@@ -617,27 +641,4 @@ void get_rom_name(char *rom_name) {
     if (strcmp(rom_name, "noname") != 0) {
         format_filename(rom_name, MAX_ROM_NAME_LENGTH);
     }
-}
-#ifdef USE_MIGRATED_STORAGE
-static int migrated_storage = 1;
-#else
-static int migrated_storage = -1;
-#endif
-
-int use_migrated_storage() {
-    if (migrated_storage == -1) {
-        migrated_storage = 0;
-        if (ensure_path_mounted("/data") != 0)
-            return 0;
-        char android_ver[PROPERTY_VALUE_MAX];
-        if (read_config_file("/system/build.prop", "ro.build.version.release", android_ver, "4.1") < 0) {
-            ui_print("failed to open /system/build.prop!\n");
-            return 0;
-        }
-        struct stat s;
-	    if (strncmp(android_ver,"4.2",3) >= 0 && lstat("/data/media/0", &s) == 0)
-            migrated_storage = 1;
-    }
-
-    return migrated_storage;
 }
