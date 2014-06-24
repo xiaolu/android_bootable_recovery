@@ -604,7 +604,7 @@ int nandroid_backup(const char* backup_path) {
     __system(tmp);
 
     sync();
-    ui_set_background(BACKGROUND_ICON_NONE);
+    ui_set_background(BACKGROUND_ICON_CLOCKWORK);
     ui_reset_progress();
     ui_print("\n备份完毕!\n");
     return 0;
@@ -1016,7 +1016,7 @@ int nandroid_restore(const char* backup_path, unsigned char flags) {
         return print_and_error(NULL, ret);
 
     sync();
-    ui_set_background(BACKGROUND_ICON_NONE);
+    ui_set_background(BACKGROUND_ICON_CLOCKWORK);
     ui_reset_progress();
     ui_print("\n还原完毕!\n");
     return 0;
