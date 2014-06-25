@@ -73,9 +73,6 @@ static gr_surface *gProgressBarIndeterminate;
 static gr_surface gProgressBarEmpty;
 static gr_surface gProgressBarFill;
 static gr_surface gBackground;
-#ifdef USE_VIRTUAL_KEY
-static gr_surface gVirtualKeys; // surface for our virtual key buttons
-#endif
 static int ui_has_initialized = 0;
 static int ui_log_stdout = 1;
 
@@ -92,9 +89,6 @@ static const struct { gr_surface* surface; const char *name; } BITMAPS[] = {
     { &gProgressBarEmpty,               "progress_empty" },
     { &gProgressBarFill,                "progress_fill" },
     { &gBackground,                "stitch" },
-#ifdef USE_VIRTUAL_KEY
-    { &gVirtualKeys,                    "virtual_keys" },
-#endif
     { NULL,                             NULL },
 };
 
@@ -102,6 +96,9 @@ static int gCurrentIcon = 0;
 static int gInstallingFrame = 0;
 
 //semi touch code
+#ifdef USE_VIRTUAL_KEY
+static gr_surface gVirtualKeys; // surface for our virtual key buttons
+#endif
 static int rel_sum = 0;
 static int slide_right = 0;
 static int slide_left = 0;
@@ -164,9 +161,15 @@ static void reset_gestures() {
 #ifdef USE_VIRTUAL_KEY
 static void ui_set_virtualkey_size() {
     if (vkey_height == 0) {
+        int result = res_create_surface("virtual_keys", &gVirtualKeys);
+        if (result < 0) {
+            LOGE("Missing bitmap virtual_keys(Code %d)\n", result);
+            return NULL;
+        }
         gr_surface surface = gVirtualKeys;
         vkey_height = gr_get_height(surface);
         vkey_width = gr_get_width(surface);
+        LOGI("virtualkey size: %dx%d\n", vkey_width, vkey_height);
     }
 }
 
@@ -182,12 +185,12 @@ static int input_buttons()
         unsigned int keyoffset = (gr_fb_width() - vkey_width) / 2;
         if (touch_x < (keywidth + keyoffset + 1)) {
             //down button
-            final_code = KEY_VOLUMEDOWN;
+            final_code = KEY_DOWN;
             start_draw = keyoffset;
             end_draw = keywidth + keyoffset;
         } else if (touch_x < ((keywidth * 2) + keyoffset + 1)) {
             //up button
-            final_code = KEY_VOLUMEUP;
+            final_code = KEY_UP;
             start_draw = keywidth + keyoffset + 1;
             end_draw = (keywidth * 2) + keyoffset;
         } else if (touch_x < ((keywidth * 3) + keyoffset + 1)) {
@@ -207,7 +210,7 @@ static int input_buttons()
 
         pthread_mutex_lock(&gUpdateMutex);
         gr_color(200, 200, 200, 100);
-        gr_fill(start_draw, gr_fb_height()-vkey_height, end_draw, gr_fb_height());
+        gr_fill(start_draw, gr_fb_height()-vkey_height+2, end_draw, gr_fb_height());
         gr_flip();
         pthread_mutex_unlock(&gUpdateMutex);
         input_button_has_draw = 1;
@@ -396,7 +399,7 @@ static void draw_virtualkeys_locked()
 static void draw_text_line(int row, const char* t, int align) {
     int col = 0;
     if (t[0] != '\0') {
-        if (ui_get_rainbow_mode()) ui_rainbow_mode();
+        //if (ui_get_rainbow_mode()) ui_rainbow_mode();
         int length = strnlen(t, MENU_MAX_COLS) * CHAR_WIDTH;
         switch(align)
         {
@@ -436,9 +439,6 @@ static void draw_screen_locked(void)
         // gr_color(0, 0, 0, 160);
         // gr_fill(0, 0, gr_fb_width(), gr_fb_height());
 
-#ifdef USE_VIRTUAL_KEY
-        ui_set_virtualkey_size();
-#endif
         int total_rows = (gr_fb_height() - vkey_height) / CHAR_HEIGHT;
         int i = 0;
         int j = 0;
@@ -672,7 +672,7 @@ static int input_callback(int fd, short revents, void *data)
                 else if (touch_x > 0) {
                     ev.type = EV_KEY;
                     ev.code=input_buttons();
-                    ev.value = 1;
+                    ev.value = 2;
                     vibrate(VIBRATOR_TIME_MS);
                 }
                 //clear button pressed down effect.
@@ -791,7 +791,8 @@ void ui_init(void)
     text_col = text_row = 0;
     text_rows = gr_fb_height() / CHAR_HEIGHT;
 #ifdef USE_VIRTUAL_KEY
-    text_rows = text_rows - 1;
+    ui_set_virtualkey_size();
+    text_rows = text_rows - (vkey_height / CHAR_HEIGHT);
 #endif
     max_menu_rows = text_rows - MIN_LOG_ROWS;
     if (max_menu_rows > MENU_MAX_ROWS)
