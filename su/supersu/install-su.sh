@@ -32,24 +32,35 @@ if [ "$ABI2" = "x86" ]; then ARCH=x86; fi;
 
 API=$(cat /system/build.prop | grep ro.build.version.sdk= | dd bs=1 skip=21 count=2)
 SUMOD=06755
+SUGOTE=false
+MKSH=/system/bin/mksh
 if [ "$API" -eq "$API" ]; then
   if [ "$API" -gt "17" ]; then
       SUMOD=0755
+	  SUGOTE=true
   fi
+fi
+if [ ! -f $MKSH ]; then
+  MKSH=/system/bin/sh
 fi
 
 BIN=/sbin/supersu/$ARCH
 COM=/sbin/supersu/common
 
 chattr -i /system/xbin/su
+$BIN/chattr.pie -i /system/xbin/su
 chattr -i /system/bin/.ext/.su
+$BIN/chattr.pie -i /system/bin/.ext/.su
 chattr -i /system/xbin/daemonsu
+$BIN/chattr.pie -i /system/xbin/daemonsu
 chattr -i /system/etc/install-recovery.sh
+$BIN/chattr.pie -i /system/etc/install-recovery.sh
 
 rm -f /system/bin/su
 rm -f /system/xbin/su
 rm -f /system/xbin/daemonsu
 rm -f /system/xbin/sugote
+rm -f /system/xbin/sugote-mksh
 rm -f /system/bin/.ext/.su
 rm -f /system/etc/install-recovery.sh
 rm -f /system/etc/init.d/99SuperSUDaemon
@@ -85,7 +96,10 @@ rm -f /data/app/eu.chainfire.supersu-*
 mkdir /system/bin/.ext
 cp $BIN/su /system/xbin/daemonsu
 cp $BIN/su /system/xbin/su
-cp $BIN/su /system/xbin/sugote
+if ($SUGOTE); then 
+  cp $BIN/su /system/xbin/sugote	
+  cp $MKSH /system/xbin/sugote-mksh
+fi
 cp $BIN/su /system/bin/.ext/.su
 cp $COM/install-recovery.sh /system/etc/install-recovery.sh
 cp $COM/99SuperSUDaemon /system/etc/init.d/99SuperSUDaemon
@@ -94,7 +108,10 @@ echo 1 > /system/etc/.installed_su_daemon
 set_perm 0 0 0777 /system/bin/.ext
 set_perm 0 0 $SUMOD /system/bin/.ext/.su
 set_perm 0 0 $SUMOD /system/xbin/su
-set_perm 0 0 0755 /system/xbin/sugote
+if ($SUGOTE); then 
+  set_perm 0 0 0755 /system/xbin/sugote
+  set_perm 0 0 0755 /system/xbin/sugote-mksh
+fi
 set_perm 0 0 0755 /system/xbin/daemonsu
 set_perm 0 0 0755 /system/etc/install-recovery.sh
 set_perm 0 0 0755 /system/etc/init.d/99SuperSUDaemon
@@ -102,7 +119,10 @@ set_perm 0 0 0644 /system/etc/.installed_su_daemon
 
 ch_con /system/bin/.ext/.su
 ch_con /system/xbin/su
-ch_con_ext /system/xbin/sugote u:object_r:zygote_exec:s0
+if ($SUGOTE); then 
+    ch_con_ext /system/xbin/sugote u:object_r:zygote_exec:s0
+	ch_con /system/xbin/sugote-mksh
+fi
 ch_con /system/xbin/daemonsu
 ch_con /system/etc/install-recovery.sh
 ch_con /system/etc/init.d/99SuperSUDaemon
