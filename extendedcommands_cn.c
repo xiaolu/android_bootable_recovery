@@ -891,6 +891,28 @@ static MFMatrix get_mnt_fmt_capabilities(char *fs_type, char *mount_point) {
     return mfm;
 }
 
+static int is_ums_capable() {
+    // control_usb_storage() only supports vold managed storage
+    int i;
+
+    // If USB volume is available, UMS not possible (assumes one USB/device)
+    for (i = 0; i < get_num_volumes(); i++) {
+        Volume *v = get_device_volumes() + i;
+        if (fs_mgr_is_voldmanaged(v) && vold_is_volume_available(v->mount_point)
+                && (strcasestr(v->label, "usb") || strcasestr(v->label, "otg")))
+            return 0;
+    }
+
+    // No USB storage found, look for any other vold managed storage
+    for (i = 0; i < get_num_volumes(); i++) {
+        Volume *v = get_device_volumes() + i;
+        if (fs_mgr_is_voldmanaged(v) && vold_is_volume_available(v->mount_point))
+            return 1;
+    }
+
+    return 0;
+}
+
 int show_partition_menu() {
     static const char* headers[] = { "挂载和大容量储存", "", NULL };
 
@@ -905,6 +927,15 @@ int show_partition_menu() {
     int i, mountable_volumes, formatable_volumes;
     int num_volumes;
     int chosen_item = 0;
+    int menu_entries = 0;
+
+    struct menu_extras {
+        int dm;   // boolean: enable wipe data media
+        int ums;  // boolean: enable mount usb mass storage
+        int idm;  // index of wipe dm entry in list[]
+        int iums; // index of ums entry in list[]
+    };
+    struct menu_extras me;
 
     num_volumes = get_num_volumes();
 
@@ -954,39 +985,26 @@ int show_partition_menu() {
             list[mountable_volumes + i] = e->txt;
         }
 
-        if (!is_data_media()) {
-            list[mountable_volumes + formatable_volumes] = "打开U盘模式";
-            list[mountable_volumes + formatable_volumes + 1] = '\0';
-        } else {
-            list[mountable_volumes + formatable_volumes] = "格式化 /data(包括内置储存)";
-            list[mountable_volumes + formatable_volumes + 1] = "打开U盘模式";
-            list[mountable_volumes + formatable_volumes + 2] = '\0';
+        menu_entries = mountable_volumes + formatable_volumes;
+        me = (struct menu_extras){ 0, 0, 0, 0 };
+
+        if (me.dm = is_data_media()) {
+            me.idm = menu_entries;
+            list[me.idm] = "格式化 /data(包括内置储存)";
+            menu_entries++;
         }
+        if (me.ums = is_ums_capable()) {
+            me.iums = menu_entries;
+            list[me.iums] = "打开U盘模式";
+            menu_entries++;
+        }
+        list[menu_entries] = '\0';
 
         chosen_item = get_menu_selection(headers, list, 0, 0);
-        if (chosen_item == GO_BACK || chosen_item == REFRESH)
+        if (chosen_item >= menu_entries || chosen_item < 0)
             break;
-        if (chosen_item == (mountable_volumes + formatable_volumes)) {
-            if (!is_data_media()) {
-                show_mount_usb_storage_menu();
-            } else {
-                if (!confirm_selection("格式化/data(包括内置储存)", confirm))
-                    continue;
-                preserve_data_media(0);
-                ui_print("正在格式化/data...\n");
-                if (0 != format_volume("/data"))
-                    ui_print("格式化/data出错!\n");
-                else
-                    ui_print("完成.\n");
-                preserve_data_media(1);
 
-                // recreate /data/media with proper permissions
-                ensure_path_mounted("/data");
-                setup_data_media();
-            }
-        } else if (is_data_media() && chosen_item == (mountable_volumes + formatable_volumes + 1)) {
-            show_mount_usb_storage_menu();
-        } else if (chosen_item < mountable_volumes) {
+        if (chosen_item < mountable_volumes) {
             MountMenuEntry* e = &mount_menu[chosen_item];
 
             if (is_path_mounted(e->path)) {
@@ -1005,7 +1023,8 @@ int show_partition_menu() {
             sprintf(confirm_string, "%s - %s", e->path, confirm_format);
 
             // support user choice fstype when formatting external storage
-            // ensure fstype==auto because most devices with internal vfat storage cannot be formatted to other types
+            // ensure fstype==auto because most devices with internal vfat
+            // storage cannot be formatted to other types
             if (strcmp(e->type, "auto") == 0) {
                 format_sdcard(e->path);
                 continue;
@@ -1018,6 +1037,22 @@ int show_partition_menu() {
                 ui_print("格式化%s出错!\n", e->path);
             else
                 ui_print("完成.\n");
+        } else if (me.dm && chosen_item == me.idm) {
+            if (!confirm_selection("format /data and /data/media (/sdcard)", confirm))
+                continue;
+            preserve_data_media(0);
+            ui_print("正在格式化/data...\n");
+            if (0 != format_volume("/data"))
+                ui_print("格式化/data出错!\n");
+            else
+                ui_print("完成.\n");
+            preserve_data_media(1);
+
+            // recreate /data/media with proper permissions
+            ensure_path_mounted("/data");
+            setup_data_media();
+        } else if (me.ums && chosen_item == me.iums) {
+            show_mount_usb_storage_menu();
         }
     }
 
