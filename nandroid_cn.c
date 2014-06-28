@@ -235,7 +235,7 @@ static int mkyaffs2image_wrapper(const char* backup_path, const char* backup_fil
 
     FILE *fp = __popen(tmp, "r");
     if (fp == NULL) {
-        ui_print("Unable to execute mkyaffs2image.\n");
+        ui_print("无法执行mkyaffs2image.\n");
         return -1;
     }
 
@@ -254,7 +254,7 @@ static int do_tar_compress(char* command, int callback) {
     set_perf_mode(1);
     FILE *fp = __popen(command, "r");
     if (fp == NULL) {
-        ui_print("Unable to execute tar command!\n");
+        ui_print("无法执行tar命令!\n");
         set_perf_mode(0);
         return -1;
     }
@@ -296,11 +296,11 @@ void nandroid_dedupe_gc(const char* blob_dir) {
     char *d = dirname(backup_dir);
     strcpy(backup_dir, d);
     strcat(backup_dir, "/backup");
-    ui_print("Freeing space...\n");
+    ui_print("正在释放空间...\n");
     char tmp[PATH_MAX];
     sprintf(tmp, "dedupe gc %s $(find %s -name '*.dup')", blob_dir, backup_dir);
     __system(tmp);
-    ui_print("Done freeing space.\n");
+    ui_print("释放空间完毕.\n");
 }
 
 static int dedupe_compress_wrapper(const char* backup_path, const char* backup_file_image, int callback) {
@@ -325,7 +325,7 @@ static int dedupe_compress_wrapper(const char* backup_path, const char* backup_f
 
     FILE *fp = __popen(tmp, "r");
     if (fp == NULL) {
-        ui_print("Unable to execute dedupe.\n");
+        ui_print("无法执行dedupe.\n");
         return -1;
     }
 
@@ -392,12 +392,12 @@ unsigned int nandroid_get_default_backup_format() {
 static nandroid_backup_handler get_backup_handler(const char *backup_path) {
     Volume *v = volume_for_path(backup_path);
     if (v == NULL) {
-        ui_print("Unable to find volume.\n");
+        ui_print("无法找到卷.\n");
         return NULL;
     }
     const MountedVolume *mv = find_mounted_volume_by_mount_point(v->mount_point);
     if (mv == NULL) {
-        ui_print("Unable to find mounted volume: %s\n", v->mount_point);
+        ui_print("无法找到已挂载的卷: %s\n", v->mount_point);
         return NULL;
     }
 
@@ -450,7 +450,7 @@ static int nandroid_backup_partition_extended(const char* backup_path, const cha
     nandroid_backup_handler backup_handler = get_backup_handler(mount_point);
 
     if (backup_handler == NULL) {
-        ui_print("Error finding an appropriate backup handler.\n");
+        ui_print("无法找到合适的备份方法.\n");
         return -2;
     }
     ret = backup_handler(mount_point, tmp, callback);
@@ -523,7 +523,7 @@ int nandroid_backup(const char* backup_path) {
         uint64_t sdcard_free_mb = sdcard_free / (uint64_t)(1024 * 1024);
         ui_print("SD Card space free: %lluMB\n", sdcard_free_mb);
         if (sdcard_free_mb < 150)
-            ui_print("There may not be enough free space to complete backup... continuing...\n");
+            ui_print("可能没有足够的可用空间来完成备份...继续备份...\n");
     }
     char tmp[PATH_MAX];
     ensure_directory(backup_path);
@@ -651,7 +651,7 @@ static int unyaffs_wrapper(const char* backup_file_image, const char* backup_pat
     sprintf(tmp, "cd %s ; unyaffs %s ; exit $?", backup_path, backup_file_image);
     FILE *fp = __popen(tmp, "r");
     if (fp == NULL) {
-        ui_print("不能正确执行unyaffs命令.\n");
+        ui_print("无法执行unyaffs命令.\n");
         return -1;
     }
 
@@ -670,7 +670,7 @@ static int do_tar_extract(char* command, int callback) {
     set_perf_mode(1);
     FILE *fp = __popen(command, "r");
     if (fp == NULL) {
-        ui_print("不能正确执行tar命令.\n");
+        ui_print("无法执行tar命令.\n");
         set_perf_mode(0);
         return -1;
     }
@@ -713,7 +713,7 @@ static int dedupe_extract_wrapper(const char* backup_file_image, const char* bac
     char path[PATH_MAX];
     FILE *fp = __popen(tmp, "r");
     if (fp == NULL) {
-        ui_print("不能正确执行dedupe命令.\n");
+        ui_print("无法执行dedupe命令.\n");
         return -1;
     }
 
@@ -741,7 +741,7 @@ static nandroid_restore_handler get_restore_handler(const char *backup_path) {
     scan_mounted_volumes();
     const MountedVolume *mv = find_mounted_volume_by_mount_point(v->mount_point);
     if (mv == NULL) {
-        ui_print("无法找到已经挂载的: %s\n", v->mount_point);
+        ui_print("无法找到已经挂载的卷: %s\n", v->mount_point);
         return NULL;
     }
 
@@ -867,7 +867,7 @@ static int nandroid_restore_partition_extended(const char* backup_path, const ch
     }
 
     if (restore_handler == NULL) {
-        ui_print("Error finding an appropriate restore handler.\n");
+        ui_print("无法找到合适的备份还原方法.\n");
         return -2;
     }
 

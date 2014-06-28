@@ -312,7 +312,7 @@ static char** gather_files(const char* directory, const char* fileExtensionOrDir
 
     dir = opendir(directory);
     if (dir == NULL) {
-        ui_print("不能打开目录.\n");
+        ui_print("无法打开目录.\n");
         return NULL;
     }
 
