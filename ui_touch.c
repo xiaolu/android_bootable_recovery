@@ -1371,3 +1371,7 @@ void ui_set_rainbow_mode(int rainbowMode) {
     update_screen_locked();
     pthread_mutex_unlock(&gUpdateMutex);
 }
+
+int is_ui_initialized() {
+    return ui_has_initialized;
+}
