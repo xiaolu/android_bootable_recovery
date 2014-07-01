@@ -118,9 +118,9 @@ static int diff_x = 0;
 static int diff_y = 0;
 static int min_x_swipe_px = 100;
 static int min_y_swipe_px = 80;
-static int input_button_has_draw = 0;
-static unsigned int vkey_height = 0;
-static unsigned int vkey_width = 0;
+static int virtualkey_pressed = 0;
+static unsigned int virtualkey_h = 0;
+static unsigned int virtualkey_w = 0;
 
 static int get_batt_stats(void)
 {
@@ -165,63 +165,59 @@ static void reset_gestures() {
 }
 
 #ifdef USE_VIRTUAL_KEY
-static void ui_set_virtualkey_size() {
-    if (vkey_height == 0) {
+static void ui_get_virtualkey_size() {
+    if (virtualkey_h == 0) {
         int result = res_create_surface("virtual_keys", &gVirtualKeys);
         if (result == 0) {
             gr_surface surface = gVirtualKeys;
-            vkey_height = gr_get_height(surface);
-            vkey_width = gr_get_width(surface);
-            LOGI("virtualkey size: %dx%d\n", vkey_width, vkey_height);
+            virtualkey_h = gr_get_height(surface);
+            virtualkey_w = gr_get_width(surface);
+            LOGI("virtualkey size: %dx%d\n", virtualkey_w, virtualkey_h);
         }
     }
 }
 
-static int input_buttons()
+static int ui_get_virtualkey_pressed()
 {
-    int final_code = 0;
-    if (gCurrentIcon == BACKGROUND_ICON_INSTALLING) return final_code;
-    //gr_surface surface = gVirtualKeys;
-    if (touch_y >= (gr_fb_height() - vkey_height) && touch_x > 0) {
+    int key_code = 0;
+    if (gCurrentIcon == BACKGROUND_ICON_INSTALLING)
+        return key_code;
+
+    if (touch_y >= (gr_fb_height() - virtualkey_h) && touch_x > 0) {
         int start_draw = 0;
         int end_draw = 0;
-        unsigned int keywidth = vkey_width / 4;
-        unsigned int keyoffset = (gr_fb_width() - vkey_width) / 2;
+        unsigned int keywidth = virtualkey_w / 4;
+        unsigned int keyoffset = (gr_fb_width() - virtualkey_w) / 2;
         if (touch_x < (keywidth + keyoffset + 1)) {
-            //down button
-            final_code = KEY_DOWN;
+            key_code = KEY_VOLUMEDOWN;
             start_draw = keyoffset;
             end_draw = keywidth + keyoffset;
         } else if (touch_x < ((keywidth * 2) + keyoffset + 1)) {
-            //up button
-            final_code = KEY_UP;
+            key_code = KEY_VOLUMEUP;
             start_draw = keywidth + keyoffset + 1;
             end_draw = (keywidth * 2) + keyoffset;
         } else if (touch_x < ((keywidth * 3) + keyoffset + 1)) {
-            //back button
-            final_code = KEY_BACK;
+            key_code = KEY_BACK;
             start_draw = (keywidth * 2) + keyoffset + 1;
             end_draw = (keywidth * 3) + keyoffset;
-            //if (ui_root_menu) return final_code;
         } else if (touch_x < ((keywidth * 4) + keyoffset + 1)) {
-            //enter key
-            final_code = KEY_POWER;
+            key_code = KEY_ENTER;
             start_draw = (keywidth * 3) + keyoffset + 1;
             end_draw = (keywidth * 4) + keyoffset;
         } else
-
-            return final_code;
+            return key_code;
 
         pthread_mutex_lock(&gUpdateMutex);
-        gr_color(200, 200, 200, 100);
-        gr_fill(start_draw, gr_fb_height()-vkey_height+2, end_draw, gr_fb_height());
+        gr_color(200, 200, 200, 255);
+        gr_fill(start_draw, gr_fb_height()-virtualkey_h+2, end_draw, gr_fb_height());
         gr_flip();
         pthread_mutex_unlock(&gUpdateMutex);
-        input_button_has_draw = 1;
+        virtualkey_pressed = 1;
     }
-    return final_code;
+    return key_code;
 }
 #endif
+
 static struct timeval lastprogupd = (struct timeval) {0};
 
 static enum ProgressBarType {
@@ -387,18 +383,18 @@ static void draw_progress_locked() {
 // Should only be called with gUpdateMutex locked.
 static void draw_virtualkeys_locked()
 {
-    gr_surface surface = gVirtualKeys;
-    int iconWidth = gr_get_width(surface);
-    int iconHeight = gr_get_height(surface);
-    int iconX = (gr_fb_width() - iconWidth) / 2;
-    int iconY = (gr_fb_height() - iconHeight);
-    //clear virtual key area.
-    gr_color(0, 0, 0, 255);
-    gr_fill(0, gr_fb_height()-iconHeight, gr_fb_width(), gr_fb_height());
+    //gr_surface surface = gVirtualKeys;
+    //virtualkey_w = gr_get_width(surface);
+    //virtualkey_h = gr_get_height(surface);
+    int iconX = (gr_fb_width() - virtualkey_w) / 2;
+    int iconY = (gr_fb_height() - virtualkey_h);
+    //clear virtual key area alpha.
+    //gr_color(0, 0, 0, 255);
+    //gr_fill(0, iconY, gr_fb_width(), gr_fb_height());
     //draw virtual key area background.
-    gr_blit(gBackground, 0, 0, iconWidth, iconHeight, iconX, iconY);
+    //gr_blit(gBackground, 0, 0, virtualkey_w, virtualkey_h, iconX, iconY);
     //draw virtual key.
-    gr_blit(surface, 0, 0, iconWidth, iconHeight, iconX, iconY);
+    gr_blit(gVirtualKeys, 0, 0, virtualkey_w, virtualkey_h, iconX, iconY);
 }
 #endif
 
@@ -409,7 +405,7 @@ static void draw_virtualkeys_locked()
 static void draw_text_line(int row, const char* t, int align) {
     int col = 0;
     if (t[0] != '\0') {
-        //if (ui_get_rainbow_mode()) ui_rainbow_mode();
+        if (ui_get_rainbow_mode()) ui_rainbow_mode();
         int length = strnlen(t, MENU_MAX_COLS) * CHAR_WIDTH;
         switch(align)
         {
@@ -442,9 +438,12 @@ static void draw_screen_locked(void) {
 
     draw_background_locked(gCurrentIcon);
     draw_progress_locked();
+#ifdef USE_VIRTUAL_KEY
+    draw_virtualkeys_locked();
+#endif
 
     if (show_text) {
-        int total_rows = (gr_fb_height() - vkey_height) / CHAR_HEIGHT;
+        int total_rows = (gr_fb_height() - virtualkey_h) / CHAR_HEIGHT;
         int i = 0;
         int j = 0;
         int row = 0; // current row that we are drawing on
@@ -517,9 +516,6 @@ static void draw_screen_locked(void) {
             draw_text_line(start_row + r, text[(cur_row + r) % MAX_ROWS], LEFT_ALIGN);
         }
     }
-#ifdef USE_VIRTUAL_KEY
-    draw_virtualkeys_locked(); //added to draw the virtual keys
-#endif
 }
 
 // Redraw everything on the screen and flip the screen (make it visible).
@@ -609,10 +605,6 @@ static int input_callback(int fd, short revents, void *data) {
     if (ret)
         return -1;
 
-#ifdef USE_VIRTUAL_KEY
-    ui_set_virtualkey_size();
-#endif
-
     if (ev.type == EV_SYN) {
         s_cur_slot = 0;
         return 0;
@@ -660,33 +652,35 @@ static int input_callback(int fd, short revents, void *data) {
             case ABS_MT_TRACKING_ID:
                 s_tracking_id = ev.value;
                 if (s_tracking_id != -1) break;
-                if (touch_y < (gr_fb_height() - vkey_height)) {
+                if (touch_y < (gr_fb_height() - virtualkey_h)) {
                     if(slide_right == 1) {
                         ev.type = EV_KEY;
                         ev.code = KEY_ENTER;
                         ev.value = 1;
                         slide_right = 0;
+                        vibrate(VIBRATOR_TIME_MS);
                     } else if(slide_left == 1) {
                         ev.type = EV_KEY;
                         ev.code = KEY_BACK;
                         ev.value = 1;
                         slide_left = 0;
+                        vibrate(VIBRATOR_TIME_MS);
                     }
                 }
 #ifdef USE_VIRTUAL_KEY
                 else if (touch_x > 0) {
                     ev.type = EV_KEY;
-                    ev.code=input_buttons();
+                    ev.code=ui_get_virtualkey_pressed();
                     ev.value = 2;
                     vibrate(VIBRATOR_TIME_MS);
                 }
                 //clear button pressed down effect.
-                if (input_button_has_draw == 1) {
+                if (virtualkey_pressed == 1) {
                     pthread_mutex_lock(&gUpdateMutex);
-                    draw_virtualkeys_locked();
-                    gr_flip();
+                    //draw_virtualkeys_locked();
+                    update_screen_locked();
                     pthread_mutex_unlock(&gUpdateMutex);
-                    input_button_has_draw = 0;
+                    virtualkey_pressed = 0;
                 }
 #endif
                 reset_gestures();
@@ -698,13 +692,13 @@ static int input_callback(int fd, short revents, void *data) {
                 touch_x = touch_x_rel * gr_fb_width();
                 if (old_x == 0) break;
                 diff_x += touch_x - old_x;
-                if (touch_y < (gr_fb_height() - vkey_height)) {
+                if (abs(diff_x) > abs(diff_y) && touch_y < (gr_fb_height() - virtualkey_h)) {
                     if(diff_x > min_x_swipe_px) {
                         slide_right = 1;
-                        reset_gestures();
+                        //reset_gestures();
                     } else if (diff_x < -min_x_swipe_px) {
                         slide_left = 1;
-                        reset_gestures();
+                        //reset_gestures();
                     }
                 }
                 break;
@@ -714,11 +708,11 @@ static int input_callback(int fd, short revents, void *data) {
                 float touch_y_rel = (float)ev.value / (float)max_y_touch;
                 touch_y = touch_y_rel * gr_fb_height();
 #ifdef USE_VIRTUAL_KEY
-                input_buttons();
+                ui_get_virtualkey_pressed();
 #endif
                 if (old_y == 0) break;
                 diff_y += touch_y - old_y;
-                if (touch_y < (gr_fb_height() - vkey_height)) {
+                if (abs(diff_y) >= abs(diff_x) && touch_y < (gr_fb_height() - virtualkey_h)) {
                     if (diff_y > min_y_swipe_px) {
                         ev.type = EV_KEY;
                         ev.code = KEY_VOLUMEDOWN;
@@ -790,12 +784,12 @@ void ui_init(void) {
     gr_init();
     set_min_swipe_lengths();
 #ifdef USE_VIRTUAL_KEY
-    ui_set_virtualkey_size();
+    ui_get_virtualkey_size();
 #endif
     ev_init(input_callback, NULL);
 
     text_col = text_row = 0;
-    text_rows = (gr_fb_height() - vkey_height) / CHAR_HEIGHT;
+    text_rows = (gr_fb_height() - virtualkey_h) / CHAR_HEIGHT;
     max_menu_rows = text_rows - MIN_LOG_ROWS;
     if (max_menu_rows > MENU_MAX_ROWS)
         max_menu_rows = MENU_MAX_ROWS;
