@@ -46,7 +46,7 @@ static int gShowBackButton = 0;
 #endif
 
 #define MAX_COLS 96
-#define MAX_ROWS 32
+#define MAX_ROWS 24
 #define MENU_MAX_COLS 64
 #define MENU_MAX_ROWS 250
 #define MENU_ITEM_HEADER " > "
@@ -109,7 +109,7 @@ static gr_surface gVirtualKeys; // surface for our virtual key buttons
 static int slide_right = 0;
 static int slide_left = 0;
 static int s_tracking_id = -1;
-static int s_cur_slot = 0;
+static int slot_current = 0;
 static unsigned int touch_x = 0;
 static unsigned int touch_y = 0;
 static unsigned int old_x = 0;
@@ -122,20 +122,31 @@ static int virtualkey_pressed = 0;
 static unsigned int virtualkey_h = 0;
 static unsigned int virtualkey_w = 0;
 
+static const char *BATT_FILES[] = {
+#ifdef CUSTOM_BATT_FILE
+    CUSTOM_BATT_FILE,
+#endif
+    "/sys/class/power_supply/battery/capacity",
+    "/sys/devices/platform/android-battery/power_supply/android-battery/capacity",
+    NULL
+};
+
 static int get_batt_stats(void)
 {
-    static int level = -1;
-
+    int level = -1;
     char value[4];
-    FILE * capacity;
-    if ( (capacity = fopen("/sys/class/power_supply/battery/capacity","r")) ) {
-        fgets(value, 4, capacity);
-        fclose(capacity);
-    } else if ( (capacity = fopen("/sys/devices/platform/android-battery/power_supply/android-battery/capacity","r")) ) {
-        fgets(value, 4, capacity);
-        fclose(capacity);
+    FILE * fd;
+    const char **BATT = BATT_FILES;
+    while (*BATT) {
+        if ((fd = fopen(*BATT, "r"))) {
+            fgets(value, 4, fd);
+            fclose(fd);
+            level = atoi(value);
+            break;
+        }
+        BATT++;
     }
-    level = atoi(value);
+
     if (level > 100)
         level = 100;
     if (level < 0)
@@ -161,6 +172,7 @@ static void reset_gestures() {
     old_y  = 0;
     touch_x = 0;
     touch_y = 0;
+    slot_current = 0;
     ui_clear_key_queue();
 }
 
@@ -392,7 +404,7 @@ static void draw_virtualkeys_locked()
     //gr_color(0, 0, 0, 255);
     //gr_fill(0, iconY, gr_fb_width(), gr_fb_height());
     //draw virtual key area background.
-    //gr_blit(gBackground, 0, 0, virtualkey_w, virtualkey_h, iconX, iconY);
+    gr_blit(gBackground, 0, 0, virtualkey_w, virtualkey_h, iconX, iconY);
     //draw virtual key.
     gr_blit(gVirtualKeys, 0, 0, virtualkey_w, virtualkey_h, iconX, iconY);
 }
@@ -405,7 +417,7 @@ static void draw_virtualkeys_locked()
 static void draw_text_line(int row, const char* t, int align) {
     int col = 0;
     if (t[0] != '\0') {
-        if (ui_get_rainbow_mode()) ui_rainbow_mode();
+        //if (ui_get_rainbow_mode()) ui_rainbow_mode();
         int length = strnlen(t, MENU_MAX_COLS) * CHAR_WIDTH;
         switch(align)
         {
@@ -438,9 +450,6 @@ static void draw_screen_locked(void) {
 
     draw_background_locked(gCurrentIcon);
     draw_progress_locked();
-#ifdef USE_VIRTUAL_KEY
-    draw_virtualkeys_locked();
-#endif
 
     if (show_text) {
         int total_rows = (gr_fb_height() - virtualkey_h) / CHAR_HEIGHT;
@@ -448,27 +457,24 @@ static void draw_screen_locked(void) {
         int j = 0;
         int row = 0; // current row that we are drawing on
         if (show_menu) {
-            gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
             int batt_level = 0;
-            batt_level = get_batt_stats();
-            if (batt_level < 21) {
-                gr_color(255, 0, 0, 255);
-            }
-            
-            //struct tm *current;
-            //time_t now;
-            //now = time(NULL); // add 2 hours
-            //current = localtime(&now);
             char batt_text[40];
-            //sprintf(batt_text, "[%d%% %02D:%02D]", batt_level, current->tm_hour, current->tm_min);
-            
-            //if (now == NULL) { // just in case
-                sprintf(batt_text, " [%d%%]", batt_level);
-            //}
+            batt_level = get_batt_stats();
 
-            gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
+            /*struct tm *current;
+            time_t now;
+            now = time(NULL); // add 2 hours
+            current = localtime(&now);
+            sprintf(batt_text, "[%d%% %02D:%02D]", batt_level, current->tm_hour, current->tm_min);
+            if (now == NULL)*/
+            sprintf(batt_text, " [%d%%]", batt_level);
+
+            gr_color(0, 255, 0, 255);
+            if (batt_level < 21)
+                gr_color(255, 0, 0, 255);
             draw_text_line(0, batt_text, RIGHT_ALIGN);
 
+            gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
             gr_fill(0, (menu_top + menu_sel - menu_show_start) * CHAR_HEIGHT,
                     gr_fb_width(), (menu_top + menu_sel - menu_show_start + 1)*CHAR_HEIGHT+1);
 
@@ -516,6 +522,10 @@ static void draw_screen_locked(void) {
             draw_text_line(start_row + r, text[(cur_row + r) % MAX_ROWS], LEFT_ALIGN);
         }
     }
+
+#ifdef USE_VIRTUAL_KEY
+    draw_virtualkeys_locked();
+#endif
 }
 
 // Redraw everything on the screen and flip the screen (make it visible).
@@ -606,7 +616,8 @@ static int input_callback(int fd, short revents, void *data) {
         return -1;
 
     if (ev.type == EV_SYN) {
-        s_cur_slot = 0;
+        if (ev.code == SYN_MT_REPORT) {
+        }
         return 0;
     } else if (ev.type == EV_REL) {
         if (ev.code == REL_Y) {
@@ -631,14 +642,6 @@ static int input_callback(int fd, short revents, void *data) {
         }
     } else if (ev.type == EV_ABS) {
     
-        if (ev.code == ABS_MT_SLOT) {
-            s_cur_slot = ev.value;
-            return 0;
-        }
-        if (s_cur_slot != 0) {
-            // use slot0 only
-            return 0;
-        }
         int abs_store[6] = {0};
         int k;
 
@@ -649,20 +652,23 @@ static int input_callback(int fd, short revents, void *data) {
         int max_y_touch = abs_store[2];
 
         switch(ev.code){
+            case ABS_MT_SLOT:
+                slot_current = ev.value;
+                break;
             case ABS_MT_TRACKING_ID:
                 s_tracking_id = ev.value;
-                if (s_tracking_id != -1) break;
+                if (s_tracking_id != -1 || slot_current != 0) break;
                 if (touch_y < (gr_fb_height() - virtualkey_h)) {
                     if(slide_right == 1) {
                         ev.type = EV_KEY;
                         ev.code = KEY_ENTER;
-                        ev.value = 1;
+                        ev.value = 2;
                         slide_right = 0;
                         vibrate(VIBRATOR_TIME_MS);
                     } else if(slide_left == 1) {
                         ev.type = EV_KEY;
                         ev.code = KEY_BACK;
-                        ev.value = 1;
+                        ev.value = 2;
                         slide_left = 0;
                         vibrate(VIBRATOR_TIME_MS);
                     }
@@ -675,10 +681,11 @@ static int input_callback(int fd, short revents, void *data) {
                     vibrate(VIBRATOR_TIME_MS);
                 }
                 //clear button pressed down effect.
-                if (virtualkey_pressed == 1) {
+                if (virtualkey_pressed == 1 && ui_handle_key(ev.code, 1) == NO_ACTION) {
                     pthread_mutex_lock(&gUpdateMutex);
-                    //draw_virtualkeys_locked();
-                    update_screen_locked();
+                    draw_virtualkeys_locked();
+                    gr_flip();
+                    //update_screen_locked();
                     pthread_mutex_unlock(&gUpdateMutex);
                     virtualkey_pressed = 0;
                 }
@@ -686,7 +693,7 @@ static int input_callback(int fd, short revents, void *data) {
                 reset_gestures();
                 break;
             case ABS_MT_POSITION_X:
-                if (s_tracking_id == -1) break;
+                if (slot_current != 0) break;
                 old_x = touch_x;
                 float touch_x_rel = (float)ev.value / (float)max_x_touch;
                 touch_x = touch_x_rel * gr_fb_width();
@@ -703,7 +710,7 @@ static int input_callback(int fd, short revents, void *data) {
                 }
                 break;
             case ABS_MT_POSITION_Y:
-                if (s_tracking_id == -1) break;
+                if (slot_current != 0) break;
                 old_y = touch_y;
                 float touch_y_rel = (float)ev.value / (float)max_y_touch;
                 touch_y = touch_y_rel * gr_fb_height();
@@ -716,12 +723,12 @@ static int input_callback(int fd, short revents, void *data) {
                     if (diff_y > min_y_swipe_px) {
                         ev.type = EV_KEY;
                         ev.code = KEY_VOLUMEDOWN;
-                        ev.value = 1;
+                        ev.value = 2;
                         reset_gestures();
                     } else if (diff_y < -min_y_swipe_px) {
                         ev.type = EV_KEY;
                         ev.code = KEY_VOLUMEUP;
-                        ev.value = 1;
+                        ev.value = 2;
                         reset_gestures();
                     }
                 }

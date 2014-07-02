@@ -521,7 +521,7 @@ int nandroid_backup(const char* backup_path) {
         uint64_t bsize = sfs.f_bsize;
         uint64_t sdcard_free = bavail * bsize;
         uint64_t sdcard_free_mb = sdcard_free / (uint64_t)(1024 * 1024);
-        ui_print("SD Card space free: %lluMB\n", sdcard_free_mb);
+        ui_print("剩余空间: %lluMB\n", sdcard_free_mb);
         if (sdcard_free_mb < 150)
             ui_print("可能没有足够的可用空间来完成备份...继续备份...\n");
     }
