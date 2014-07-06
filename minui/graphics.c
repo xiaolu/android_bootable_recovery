@@ -566,7 +566,7 @@ void gr_fb_blank(bool blank)
         perror("cannot open LCD backlight");
         return;
     }
-    write(fd, blank ? "000" : "127", 3);
+    write(fd, blank ? "000" : "250", 3);
     close(fd);
 #else
     int ret;
