@@ -62,6 +62,7 @@ rm -f /system/xbin/daemonsu
 rm -f /system/xbin/sugote
 rm -f /system/xbin/sugote-mksh
 rm -f /system/bin/.ext/.su
+rm -f /system/bin/install-recovery.sh
 rm -f /system/etc/install-recovery.sh
 rm -f /system/etc/init.d/99SuperSUDaemon
 rm -f /system/etc/.installed_su_daemon
@@ -102,6 +103,7 @@ if ($SUGOTE); then
 fi
 cp $BIN/su /system/bin/.ext/.su
 cp $COM/install-recovery.sh /system/etc/install-recovery.sh
+ln -s /system/etc/install-recovery.sh /system/bin/install-recovery.sh
 cp $COM/99SuperSUDaemon /system/etc/init.d/99SuperSUDaemon
 echo 1 > /system/etc/.installed_su_daemon
 

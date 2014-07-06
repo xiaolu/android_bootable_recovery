@@ -103,24 +103,37 @@ static int gCurrentIcon = 0;
 static int gInstallingFrame = 0;
 
 //semi touch code
-#ifdef USE_VIRTUAL_KEY
-static gr_surface gVirtualKeys; // surface for our virtual key buttons
-#endif
-static int slide_right = 0;
-static int slide_left = 0;
-static int s_tracking_id = -1;
-static int slot_current = 0;
-static unsigned int touch_x = 0;
-static unsigned int touch_y = 0;
-static unsigned int old_x = 0;
-static unsigned int old_y = 0;
+typedef struct {
+    int x;
+    int y;
+} point;
+
+typedef struct {
+    int          fd;            // Initialize to -1
+    int          touch_calibrated;
+    int          slot_current;
+    int          tracking_id;
+
+    int          saw_pos_x;      // Did this sequence have an ABS_MT_POSITION_X?
+    int          saw_pos_y;      // Did this sequence have an ABS_MT_POSITION_Y?
+    int          saw_mt_report;  // Did this sequence have an SYN_MT_REPORT?
+    int          slide_right;
+    int          slide_left;
+    point        touch_min;
+    point        touch_max;
+    point        touch_pos;      // Current touch coordinates
+    point        touch_start;    // Coordinates of touch start
+    point        touch_track;    // Last tracked coordinates
+
+} input_device;
+
 static int diff_x = 0;
 static int diff_y = 0;
 static int min_x_swipe_px = 100;
 static int min_y_swipe_px = 80;
 static int virtualkey_pressed = 0;
-static unsigned int virtualkey_h = 0;
-static unsigned int virtualkey_w = 0;
+static int virtualkey_h = 0;
+static int virtualkey_w = 0;
 
 static const char *BATT_FILES[] = {
 #ifdef CUSTOM_BATT_FILE
@@ -131,8 +144,7 @@ static const char *BATT_FILES[] = {
     NULL
 };
 
-static int get_batt_stats(void)
-{
+static int get_batt_stats(void) {
     int level = -1;
     char value[4];
     FILE * fd;
@@ -165,18 +177,51 @@ static void set_min_swipe_lengths() {
     }
 }
 
-static void reset_gestures() {
+static void reset_touch(input_device *dev) {
     diff_x = 0;
     diff_y = 0;
-    old_x  = 0;
-    old_y  = 0;
-    touch_x = 0;
-    touch_y = 0;
-    slot_current = 0;
+    dev->touch_start.x  = 0;
+    dev->touch_start.y  = 0;
+    dev->touch_pos.x = 0;
+    dev->touch_pos.y = 0;
+    dev->slot_current = 0;
+    dev->slide_right = 0;
+    dev->slide_left = 0;
     ui_clear_key_queue();
 }
 
+static int calibrate_touch(input_device *dev) {
+    struct input_absinfo info;
+
+    memset(&info, 0, sizeof(info));
+    if (ioctl(dev->fd, EVIOCGABS(ABS_MT_POSITION_X), &info) == 0) {
+        dev->touch_min.x = info.minimum;
+        dev->touch_max.x = info.maximum;
+    }
+    memset(&info, 0, sizeof(info));
+    if (ioctl(dev->fd, EVIOCGABS(ABS_MT_POSITION_Y), &info) == 0) {
+        dev->touch_min.y = info.minimum;
+        dev->touch_max.y = info.maximum;
+    }
+
+    if (dev->touch_min.x == dev->touch_max.x
+            || dev->touch_min.y == dev->touch_max.y)
+        return 0; // Probably not a touch device
+
+    dev->tracking_id = -1;
+    dev->touch_start.x  = 0;
+    dev->touch_start.y  = 0;
+    dev->touch_pos.x = 0;
+    dev->touch_pos.y = 0;
+    dev->slot_current = 0;
+    dev->slide_right = 0;
+    dev->slide_left = 0;
+
+    LOGI("calibrate_touch: %d\n", dev->fd);
+    return 1; // Success
+}
 #ifdef USE_VIRTUAL_KEY
+static gr_surface gVirtualKeys; // surface for our virtual key buttons
 static void ui_get_virtualkey_size() {
     if (virtualkey_h == 0) {
         int result = res_create_surface("virtual_keys", &gVirtualKeys);
@@ -189,30 +234,29 @@ static void ui_get_virtualkey_size() {
     }
 }
 
-static int ui_get_virtualkey_pressed()
-{
+static int ui_get_virtualkey_pressed(input_device *dev) {
     int key_code = 0;
     if (gCurrentIcon == BACKGROUND_ICON_INSTALLING)
         return key_code;
 
-    if (touch_y >= (gr_fb_height() - virtualkey_h) && touch_x > 0) {
+    if (dev->touch_pos.y >= (gr_fb_height() - virtualkey_h) && dev->touch_pos.x > 0) {
         int start_draw = 0;
         int end_draw = 0;
-        unsigned int keywidth = virtualkey_w / 4;
-        unsigned int keyoffset = (gr_fb_width() - virtualkey_w) / 2;
-        if (touch_x < (keywidth + keyoffset + 1)) {
+        int keywidth = virtualkey_w / 4;
+        int keyoffset = (gr_fb_width() - virtualkey_w) / 2;
+        if (dev->touch_pos.x < (keywidth + keyoffset + 1)) {
             key_code = KEY_VOLUMEDOWN;
             start_draw = keyoffset;
             end_draw = keywidth + keyoffset;
-        } else if (touch_x < ((keywidth * 2) + keyoffset + 1)) {
+        } else if (dev->touch_pos.x < ((keywidth * 2) + keyoffset + 1)) {
             key_code = KEY_VOLUMEUP;
             start_draw = keywidth + keyoffset + 1;
             end_draw = (keywidth * 2) + keyoffset;
-        } else if (touch_x < ((keywidth * 3) + keyoffset + 1)) {
+        } else if (dev->touch_pos.x < ((keywidth * 3) + keyoffset + 1)) {
             key_code = KEY_BACK;
             start_draw = (keywidth * 2) + keyoffset + 1;
             end_draw = (keywidth * 3) + keyoffset;
-        } else if (touch_x < ((keywidth * 4) + keyoffset + 1)) {
+        } else if (dev->touch_pos.x < ((keywidth * 4) + keyoffset + 1)) {
             key_code = KEY_ENTER;
             start_draw = (keywidth * 3) + keyoffset + 1;
             end_draw = (keywidth * 4) + keyoffset;
@@ -400,11 +444,13 @@ static void draw_virtualkeys_locked()
     //virtualkey_h = gr_get_height(surface);
     int iconX = (gr_fb_width() - virtualkey_w) / 2;
     int iconY = (gr_fb_height() - virtualkey_h);
-    //clear virtual key area alpha.
-    //gr_color(0, 0, 0, 255);
-    //gr_fill(0, iconY, gr_fb_width(), gr_fb_height());
-    //draw virtual key area background.
-    gr_blit(gBackground, 0, 0, virtualkey_w, virtualkey_h, iconX, iconY);
+    if (virtualkey_pressed) {
+        //clear virtual key area alpha.
+        //gr_color(0, 0, 0, 255);
+        //gr_fill(0, iconY, gr_fb_width(), gr_fb_height());
+        //draw virtual key area background.
+        gr_blit(gBackground, 0, 0, virtualkey_w, virtualkey_h, iconX, iconY);
+    }
     //draw virtual key.
     gr_blit(gVirtualKeys, 0, 0, virtualkey_w, virtualkey_h, iconX, iconY);
 }
@@ -469,7 +515,8 @@ static void draw_screen_locked(void) {
             if (now == NULL)*/
             sprintf(batt_text, " [%d%%]", batt_level);
 
-            gr_color(0, 255, 0, 255);
+            gr_color(menuTextColor[0], menuTextColor[1], menuTextColor[2], menuTextColor[3]);
+            //gr_color(0, 255, 0, 255);
             if (batt_level < 21)
                 gr_color(255, 0, 0, 255);
             draw_text_line(0, batt_text, RIGHT_ALIGN);
@@ -605,6 +652,39 @@ static void *progress_thread(void *cookie) {
     return NULL;
 }
 
+static void handle_release(input_device *dev, struct input_event *ev) {
+    if (dev->touch_pos.y < (gr_fb_height() - virtualkey_h)) {
+        if(dev->slide_right == 1) {
+            ev->type = EV_KEY;
+            ev->code = KEY_ENTER;
+            ev->value = 2;
+            vibrate(VIBRATOR_TIME_MS);
+        } else if(dev->slide_left == 1) {
+            ev->type = EV_KEY;
+            ev->code = KEY_BACK;
+            ev->value = 2;
+            vibrate(VIBRATOR_TIME_MS);
+        }
+    }
+#ifdef USE_VIRTUAL_KEY
+    else {
+        ev->type = EV_KEY;
+        ev->code=ui_get_virtualkey_pressed(dev);
+        ev->value = 2;
+        vibrate(VIBRATOR_TIME_MS);
+    }
+    //clear button pressed down effect.
+    if (virtualkey_pressed == 1 && ui_handle_key(ev->code, 1) == NO_ACTION) {
+        pthread_mutex_lock(&gUpdateMutex);
+        draw_virtualkeys_locked();
+        gr_flip();
+        pthread_mutex_unlock(&gUpdateMutex);
+        virtualkey_pressed = 0;
+    }
+#endif
+    reset_touch(dev);
+}
+
 static int rel_sum = 0;
 static int input_callback(int fd, short revents, void *data) {
     struct input_event ev;
@@ -615,8 +695,18 @@ static int input_callback(int fd, short revents, void *data) {
     if (ret)
         return -1;
 
+    input_device dev;
+    dev.fd = fd;
+    if(!dev.touch_calibrated)
+        dev.touch_calibrated = calibrate_touch(&dev);
+
     if (ev.type == EV_SYN) {
         if (ev.code == SYN_MT_REPORT) {
+            if (dev.saw_pos_x && dev.saw_pos_y) {
+                dev.saw_pos_x = 0;
+                dev.saw_pos_y = 0;
+            } else
+                handle_release(&dev, &ev);
         }
         return 0;
     } else if (ev.type == EV_REL) {
@@ -641,95 +731,55 @@ static int input_callback(int fd, short revents, void *data) {
             }
         }
     } else if (ev.type == EV_ABS) {
-    
-        int abs_store[6] = {0};
-        int k;
-
-        ioctl(fd, EVIOCGABS(ABS_MT_POSITION_X), abs_store);
-        int max_x_touch = abs_store[2];
-
-        ioctl(fd, EVIOCGABS(ABS_MT_POSITION_Y), abs_store);
-        int max_y_touch = abs_store[2];
-
         switch(ev.code){
             case ABS_MT_SLOT:
-                slot_current = ev.value;
+                dev.slot_current = ev.value;
                 break;
             case ABS_MT_TRACKING_ID:
-                s_tracking_id = ev.value;
-                if (s_tracking_id != -1 || slot_current != 0) break;
-                if (touch_y < (gr_fb_height() - virtualkey_h)) {
-                    if(slide_right == 1) {
-                        ev.type = EV_KEY;
-                        ev.code = KEY_ENTER;
-                        ev.value = 2;
-                        slide_right = 0;
-                        vibrate(VIBRATOR_TIME_MS);
-                    } else if(slide_left == 1) {
-                        ev.type = EV_KEY;
-                        ev.code = KEY_BACK;
-                        ev.value = 2;
-                        slide_left = 0;
-                        vibrate(VIBRATOR_TIME_MS);
-                    }
-                }
-#ifdef USE_VIRTUAL_KEY
-                else if (touch_x > 0) {
-                    ev.type = EV_KEY;
-                    ev.code=ui_get_virtualkey_pressed();
-                    ev.value = 2;
-                    vibrate(VIBRATOR_TIME_MS);
-                }
-                //clear button pressed down effect.
-                if (virtualkey_pressed == 1 && ui_handle_key(ev.code, 1) == NO_ACTION) {
-                    pthread_mutex_lock(&gUpdateMutex);
-                    draw_virtualkeys_locked();
-                    gr_flip();
-                    //update_screen_locked();
-                    pthread_mutex_unlock(&gUpdateMutex);
-                    virtualkey_pressed = 0;
-                }
-#endif
-                reset_gestures();
+                dev.tracking_id = ev.value;
+                if (dev.tracking_id == -1 && dev.slot_current == 0)
+                    handle_release(&dev, &ev);
                 break;
             case ABS_MT_POSITION_X:
-                if (slot_current != 0) break;
-                old_x = touch_x;
-                float touch_x_rel = (float)ev.value / (float)max_x_touch;
-                touch_x = touch_x_rel * gr_fb_width();
-                if (old_x == 0) break;
-                diff_x += touch_x - old_x;
-                if (abs(diff_x) > abs(diff_y) && touch_y < (gr_fb_height() - virtualkey_h)) {
+                dev.saw_pos_x = 1;
+                if (dev.slot_current != 0) break;
+                if(dev.touch_start.x == 0)
+                    dev.touch_start.x = dev.touch_pos.x;
+                float touch_rel = (float)ev.value / ((float)dev.touch_max.x - (float)dev.touch_min.x);
+                dev.touch_pos.x = touch_rel * gr_fb_width();
+                if (dev.touch_start.x == 0) break; //first touch.
+                diff_x += dev.touch_pos.x - dev.touch_start.x;
+                if (abs(diff_x) > abs(diff_y) && dev.touch_pos.y < (gr_fb_height() - virtualkey_h)) {
                     if(diff_x > min_x_swipe_px) {
-                        slide_right = 1;
-                        //reset_gestures();
+                        dev.slide_right = 1;
                     } else if (diff_x < -min_x_swipe_px) {
-                        slide_left = 1;
-                        //reset_gestures();
+                        dev.slide_left = 1;
                     }
                 }
                 break;
             case ABS_MT_POSITION_Y:
-                if (slot_current != 0) break;
-                old_y = touch_y;
-                float touch_y_rel = (float)ev.value / (float)max_y_touch;
-                touch_y = touch_y_rel * gr_fb_height();
+                dev.saw_pos_y = 1;
+                if (dev.slot_current != 0) break;
+                if(dev.touch_start.y == 0)
+                    dev.touch_start.y = dev.touch_pos.y;
+                touch_rel = (float)ev.value / ((float)dev.touch_max.y - (float)dev.touch_min.y);
+                dev.touch_pos.y = touch_rel * gr_fb_height();
 #ifdef USE_VIRTUAL_KEY
-                ui_get_virtualkey_pressed();
+                ui_get_virtualkey_pressed(&dev);
 #endif
-                if (old_y == 0) break;
-                diff_y += touch_y - old_y;
-                if (abs(diff_y) >= abs(diff_x) && touch_y < (gr_fb_height() - virtualkey_h)) {
+                if (dev.touch_start.y == 0) break; //first touch.
+                diff_y += dev.touch_pos.y - dev.touch_start.y;
+                if (abs(diff_y) >= abs(diff_x) && dev.touch_pos.y < (gr_fb_height() - virtualkey_h)) {
                     if (diff_y > min_y_swipe_px) {
                         ev.type = EV_KEY;
                         ev.code = KEY_VOLUMEDOWN;
                         ev.value = 2;
-                        reset_gestures();
+                        reset_touch(&dev);
                     } else if (diff_y < -min_y_swipe_px) {
                         ev.type = EV_KEY;
                         ev.code = KEY_VOLUMEUP;
                         ev.value = 2;
-                        reset_gestures();
+                        reset_touch(&dev);
                     }
                 }
                 break;
