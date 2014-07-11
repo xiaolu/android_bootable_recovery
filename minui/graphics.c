@@ -117,11 +117,13 @@ static int get_framebuffer(GGLSurface *fb)
            "  vi.bits_per_pixel = %d\n"
            "  vi.red.offset   = %3d   .length = %3d\n"
            "  vi.green.offset = %3d   .length = %3d\n"
-           "  vi.blue.offset  = %3d   .length = %3d\n",
+           "  vi.blue.offset  = %3d   .length = %3d\n"
+           "  fi.smem_len = %d\n",
            vi.bits_per_pixel,
            vi.red.offset, vi.red.length,
            vi.green.offset, vi.green.length,
-           vi.blue.offset, vi.blue.length);
+           vi.blue.offset, vi.blue.length,
+           fi.smem_len);
 
     has_overlay = target_has_overlay(fi.id);
 
@@ -170,6 +172,11 @@ static int get_framebuffer(GGLSurface *fb)
            close(fd);
            return -1;
        }
+
+       if (fi.smem_len == 0)
+           fi.smem_len = vi.yres_virtual * fi.line_length;
+
+       fprintf(stderr, "fi.smem_len: %d\n", fi.smem_len);
 
        bits = mmap(0, fi.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
        if (bits == MAP_FAILED) {

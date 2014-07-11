@@ -124,11 +124,15 @@ static int get_framebuffer(GGLSurface *fb)
            "  vi.bits_per_pixel = %d\n"
            "  vi.red.offset   = %3d   .length = %3d\n"
            "  vi.green.offset = %3d   .length = %3d\n"
-           "  vi.blue.offset  = %3d   .length = %3d\n",
+           "  vi.blue.offset  = %3d   .length = %3d\n"
+           "  fi.line_length  = %d\n"
+           "  fi.smem_len     = %d\n",
            vi.bits_per_pixel,
            vi.red.offset, vi.red.length,
            vi.green.offset, vi.green.length,
-           vi.blue.offset, vi.blue.length);
+           vi.blue.offset, vi.blue.length,
+           fi.line_length,
+           fi.smem_len);
 
     has_overlay = target_has_overlay(fi.id);
 
@@ -157,7 +161,7 @@ static int get_framebuffer(GGLSurface *fb)
             vi.blue.length    = 8;
             vi.transp.offset  = 0;
             vi.transp.length  = 8;
-        } else { /* RGB565*/
+        } else {
 #ifdef RECOVERY_RGB_565
 		    fprintf(stderr, "Pixel format: RGB_565\n");
             vi.blue.offset    = 0;
@@ -189,6 +193,14 @@ static int get_framebuffer(GGLSurface *fb)
            perror("failed to get fb0 info");
            close(fd);
            return -1;
+        }
+
+        if (fi.smem_len == 0) {
+            int remainder = (fi.line_length*vi.yres) & (4096 - 1);
+            if (!remainder)
+		        remainder = 4096;
+            fi.smem_len = (vi.yres * fi.line_length + 4096 - remainder) * 2;
+            fprintf(stderr, "fi.smem_len: %d, fi.line_length: %d\n", fi.smem_len, fi.line_length);
         }
 
         bits = mmap(0, fi.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
@@ -449,10 +461,12 @@ int gr_measure(const char *s)
     GRFont* fnt = NULL;
     int n, l;
     wchar_t ch;
-     if (!fnt)   fnt = gr_font;
+    if (!fnt)
+        fnt = gr_font;
     l = utf8_mbtowc(&ch, s, strlen(s));
 	//fprintf(stdout, "unicode: %d\n", l);
-	if(l <= 0 ) return 0; 
+	if (l <= 0 )
+        return 0;
 	n = fnt->cwidth[getCharID(s,NULL)];
     return n;
 }

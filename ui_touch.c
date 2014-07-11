@@ -135,28 +135,28 @@ static int virtualkey_pressed = 0;
 static int virtualkey_h = 0;
 static int virtualkey_w = 0;
 
-static const char *BATT_FILES[] = {
-#ifdef CUSTOM_BATT_FILE
-    CUSTOM_BATT_FILE,
-#endif
-    "/sys/class/power_supply/battery/capacity",
-    "/sys/devices/platform/android-battery/power_supply/android-battery/capacity",
-    NULL
-};
-
 static int get_batt_stats(void) {
     int level = -1;
+    int i = 0;
     char value[4];
     FILE * fd;
-    const char **BATT = BATT_FILES;
-    while (*BATT) {
-        if ((fd = fopen(*BATT, "r"))) {
+    const char *BATT_FILES[] = {
+    #ifdef CUSTOM_BATT_FILE
+        CUSTOM_BATT_FILE,
+    #endif
+        "/sys/class/power_supply/battery/capacity",
+        "/sys/devices/platform/android-battery/power_supply/android-battery/capacity",
+        NULL
+    };
+
+    while (BATT_FILES[i]) {
+        if ((fd = fopen(BATT_FILES[i], "r"))) {
             fgets(value, 4, fd);
             fclose(fd);
             level = atoi(value);
             break;
         }
-        BATT++;
+        i++;
     }
 
     if (level > 100)
