@@ -113,6 +113,18 @@ static int get_framebuffer(GGLSurface *fb)
         return -1;
     }
 
+    fprintf(stdout, "fb0 reports (possibly inaccurate):\n"
+           "  vi.bits_per_pixel = %d\n"
+           "  vi.red.offset   = %3d   .length = %3d\n"
+           "  vi.green.offset = %3d   .length = %3d\n"
+           "  vi.blue.offset  = %3d   .length = %3d\n"
+           "  fi.smem_len = %d\n",
+           vi.bits_per_pixel,
+           vi.red.offset, vi.red.length,
+           vi.green.offset, vi.green.length,
+           vi.blue.offset, vi.blue.length,
+           fi.smem_len);
+
     has_overlay = target_has_overlay(fi.id);
 
     if(isTargetMdp5())
@@ -148,6 +160,8 @@ static int get_framebuffer(GGLSurface *fb)
          vi.transp.offset  = 0;
          vi.transp.length  = 0;
        }
+       vi.vmode = FB_VMODE_NONINTERLACED;
+       vi.activate = FB_ACTIVATE_NOW | FB_ACTIVATE_FORCE;
        if (ioctl(fd, FBIOPUT_VSCREENINFO, &vi) < 0) {
            perror("failed to put fb0 info");
            close(fd);
@@ -158,6 +172,11 @@ static int get_framebuffer(GGLSurface *fb)
            close(fd);
            return -1;
        }
+
+       if (fi.smem_len == 0)
+           fi.smem_len = vi.yres_virtual * fi.line_length;
+
+       fprintf(stderr, "fi.smem_len: %d\n", fi.smem_len);
 
        bits = mmap(0, fi.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
        if (bits == MAP_FAILED) {
@@ -293,6 +312,16 @@ void gr_flip(void)
         /* swap front and back buffers */
         if (double_buffering)
             gr_active_fb = (gr_active_fb + 1) & 1;
+
+#ifdef BOARD_HAS_FLIPPED_SCREEN
+        /* flip buffer 180 degrees for devices with physicaly inverted screens */
+        unsigned int i;
+        for (i = 1; i < (vi.xres * vi.yres); i++) {
+            unsigned short tmp = gr_mem_surface.data[i];
+            gr_mem_surface.data[i] = gr_mem_surface.data[(vi.xres * vi.yres *2) - i];
+            gr_mem_surface.data[(vi.xres * vi.yres *2) - i] = tmp;
+        }
+#endif
 
         /* copy data from the in-memory surface to the buffer we're about
          * to make active. */
@@ -544,7 +573,7 @@ void gr_fb_blank(bool blank)
         perror("cannot open LCD backlight");
         return;
     }
-    write(fd, blank ? "000" : "127", 3);
+    write(fd, blank ? "000" : "250", 3);
     close(fd);
 #else
     int ret;
