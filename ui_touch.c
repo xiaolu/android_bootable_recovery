@@ -449,7 +449,7 @@ static void draw_virtualkeys_locked()
         //gr_color(0, 0, 0, 255);
         //gr_fill(0, iconY, gr_fb_width(), gr_fb_height());
         //draw virtual key area background.
-        gr_blit(gBackground, 0, 0, virtualkey_w, virtualkey_h, iconX, iconY);
+        gr_blit(gBackground, 0, 0, virtualkey_w, virtualkey_h, 0, iconY);
     }
     //draw virtual key.
     gr_blit(gVirtualKeys, 0, 0, virtualkey_w, virtualkey_h, iconX, iconY);
@@ -569,7 +569,6 @@ static void draw_screen_locked(void) {
             draw_text_line(start_row + r, text[(cur_row + r) % MAX_ROWS], LEFT_ALIGN);
         }
     }
-
 #ifdef USE_VIRTUAL_KEY
     draw_virtualkeys_locked();
 #endif

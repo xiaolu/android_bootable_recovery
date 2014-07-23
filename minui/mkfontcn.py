@@ -9,49 +9,47 @@ s = ''
 data = ""
 n = 0
 for i in range(32,127):
-	s += "%c"%i
-	data += "{0:#06x}, ".format(i)
-	n += 1
-	if ((n%12) == 0):
-		data += "\n"
+    s += "%c"%i
+    data += "{0:#06x}, ".format(i)
+    n += 1
+    if ((n%12) == 0):
+        data += "\n"
 
 c = ''
 count = 0
 
 for i in range(0xa1,0xff):
-	for j in range(0xa1,0xff):
-		ch = "%c%c"%(i, j)
-		try:
-			ch_u = ch.decode("gb2312")
-			c += ch
-			data += "{0:#06x}, ".format(ord(ch_u))
-			count += 1
-			n += 1
-			if ((n%12) == 0):
-				data += "\n"
-		except:
-			next
-
-#count -= len(s)
+    for j in range(0xa1,0xff):
+        ch = "%c%c"%(i, j)
+        try:
+            ch_u = ch.decode("gb2312")
+            c += ch
+            data += "{0:#06x}, ".format(ord(ch_u))
+            count += 1
+            n += 1
+            if ((n%12) == 0):
+                data += "\n"
+        except:
+            next
 
 if (len(sys.argv) > 1):
-	fontsize_en = int(sys.argv[1])
+    fontsize_en = int(sys.argv[1])
 else:
-	print u"enter font size"
-	fontsize_en = int(raw_input())
+    print u"enter font size"
+    fontsize_en = int(raw_input())
 
 fontsize_cn = fontsize_en
 font_en = ImageFont.truetype('fonts/Droid Sans Mono.ttf', fontsize_en)
 width_en,height_en = font_en.getsize("W")
 font_cn = ImageFont.truetype('fonts/Consolasyh.ttf', fontsize_cn)
 width_cn,height_cn = font_cn.getsize(ch_u)
-top_margin_en=8
-top_margin_cn=2
-height_spacing_en=8
-height_spacing_cn=8
+top_margin_en=12
+top_margin_cn=6
+height_spacing_en=12
+height_spacing_cn=12
 height_en=height_en+height_spacing_en
 height_cn=height_cn+height_spacing_cn
-		
+        
 print "fontsize: %d" %(fontsize_en)
 print "font en: %dx%d" %(width_en,height_en)
 print "font cn: %dx%d" %(width_cn,height_cn)
@@ -61,15 +59,15 @@ text = ImageDraw.Draw(im_en)
 #print "painting ascii"
 size = ""
 for i in range(len(s)):
-	text.text((0, i*height_en+top_margin_en), s[i], 255, font_en)
+    text.text((0, i*height_en+top_margin_en), s[i], 255, font_en)
 im_en.save("data_en_%d_%dx%d.png"%(fontsize_en,width_en,height_en))
 print "generating png file data_en_%d_%dx%d.png"%(fontsize_en,width_en,height_en)
 #print "painting GB2312"
 im_cn = Image.new('P', (width_cn, height_cn*count), 0)
 text = ImageDraw.Draw(im_cn)
 for i in range(0,count):
-	ch = c[i*2:i*2+2].decode("gb2312")
-	text.text((0, i*height_cn+top_margin_cn), ch, 255, font_cn)
+    ch = c[i*2:i*2+2].decode("gb2312")
+    text.text((0, i*height_cn+top_margin_cn), ch, 255, font_cn)
 im_cn.save("data_cn_%d_%dx%d.png"%(fontsize_cn,width_cn,height_cn))
 print "generating png file data_cn_%d_%dx%d.png" %(fontsize_en,width_cn,height_cn)
 
@@ -81,35 +79,36 @@ run_count = 1
 run_val = ""
 
 for y in range(height):
-        for x in range(width):
-                r = (pixs_en[x,y] > 0xC0)
-                if run_val != "":
-                        val = (0x80 if r else 0x00)
-                        if (val == run_val) & (run_count < 127):
-                                run_count += 1
-                        else:
-                                pixels.append(run_count | run_val)
-                                run_val = val
-                                run_count = 1
-                else:
-                        run_val = (0x80 if r else 0x00)
+    for x in range(width):
+        r = (pixs_en[x,y] > 0xC0)
+        if run_val != "":
+            val = (0x80 if r else 0x00)
+            if (val == run_val) & (run_count < 127):
+                    run_count += 1
+            else:
+                pixels.append(run_count | run_val)
+                run_val = val
+                run_count = 1
+        else:
+            run_val = (0x80 if r else 0x00)
 
 pixs_cn = im_cn.load()
 width,height = im_cn.size
 
 for y in range(height):
-        for x in range(width):
-                r = (pixs_cn[x,y] > 0xC0)
-                if run_val != "":
-                        val = (0x80 if r else 0x00)
-                        if (val == run_val) & (run_count < 127):
-                                run_count += 1
-                        else:
-                                pixels.append(run_count | run_val)
-                                run_val = val
-                                run_count = 1
-                else:
-                        run_val = (0x80 if r else 0x00)
+    for x in range(width):
+        r = (pixs_cn[x,y] > 0xC0)
+        if run_val != "":
+            val = (0x80 if r else 0x00)
+            if (val == run_val) & (run_count < 127):
+                run_count += 1
+            else:
+                pixels.append(run_count | run_val)
+                run_val = val
+                run_count = 1
+        else:
+            run_val = (0x80 if r else 0x00)
+
 pixels.append(run_count | run_val)
 pixels.append(0)
 
@@ -123,10 +122,10 @@ f.write("\tunsigned ewidth;\n")
 f.write("\tunsigned eheight;\n")
 f.write("\tunsigned cwidth;\n")
 f.write("\tunsigned cheight;\n")
-f.write("\tunsigned unicodemap[%d];\n"%(count+len(s)))
+f.write("\tunsigned unicodemap[%d];\n"%n)
 f.write("\tunsigned char rundata[];\n")
 f.write("} font = {\n")
-f.write("\t.count = %s,\n"%(count+len(s)))
+f.write("\t.count = %s,\n"%n)
 f.write("\t.ewidth = %s,\n"%width_en)
 f.write("\t.eheight = %s,\n"%height_en)
 f.write("\t.cwidth = %s,\n"%width_cn)
