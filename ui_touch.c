@@ -170,11 +170,14 @@ static void set_min_swipe_lengths() {
     char value[PROPERTY_VALUE_MAX];
     property_get("ro.sf.lcd_density", value, "0");
     int screen_density = atoi(value);
-    if(screen_density > 0) {
+    if(screen_density > 160) {
         min_x_swipe_px = (int)(0.5 * screen_density); // Roughly 0.5in
-        min_y_swipe_px = (int)(0.25 * screen_density); // Roughly 0.25in
-        fprintf(stdout, "min_x_swipe_px=%d,min_y_swipe_px=%d\n", min_x_swipe_px, min_y_swipe_px);
+        min_y_swipe_px = (int)(0.5 * screen_density); // Roughly 0.5in
+    } else {
+        min_x_swipe_px = gr_fb_width()/4;
+        min_y_swipe_px = 3*BOARD_RECOVERY_CHAR_HEIGHT;
     }
+    fprintf(stdout, "min_x_swipe_px=%d,min_y_swipe_px=%d\n", min_x_swipe_px, min_y_swipe_px);
 }
 
 static void reset_touch(input_device *dev) {
