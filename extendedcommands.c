@@ -1840,6 +1840,10 @@ int verify_root_and_recovery() {
 
     int ret = 0;
     struct stat st;
+
+    if (0 != lstat("/system/recovery-from-boot.p", &st))
+        remove("/system/recovery-from-boot.p");
+
     // check to see if install-recovery.sh is going to clobber recovery
     // install-recovery.sh is also used to run the su daemon on stock rom for 4.3+
     // so verify that doesn't exist...
