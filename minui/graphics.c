@@ -173,11 +173,6 @@ static int get_framebuffer(GGLSurface *fb)
            return -1;
        }
 
-       if (fi.smem_len == 0)
-           fi.smem_len = vi.yres_virtual * fi.line_length;
-
-       fprintf(stderr, "fi.smem_len: %d\n", fi.smem_len);
-
        bits = mmap(0, fi.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
        if (bits == MAP_FAILED) {
            perror("failed to mmap framebuffer");

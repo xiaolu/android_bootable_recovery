@@ -195,14 +195,6 @@ static int get_framebuffer(GGLSurface *fb)
            return -1;
         }
 
-        if (fi.smem_len == 0) {
-            int remainder = (fi.line_length*vi.yres) & (4096 - 1);
-            if (!remainder)
-		        remainder = 4096;
-            fi.smem_len = (vi.yres * fi.line_length + 4096 - remainder) * 2;
-            fprintf(stderr, "fi.smem_len: %d, fi.line_length: %d\n", fi.smem_len, fi.line_length);
-        }
-
         bits = mmap(0, fi.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
         if (bits == MAP_FAILED) {
            perror("failed to mmap framebuffer");
