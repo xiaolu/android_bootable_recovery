@@ -1,9 +1,10 @@
 通用配置:
 RECOVERY_USE_MIGRATED_STORAGE := true #强制使用/data/media/0作为/sdcard，非必需
-BOARD_NO_SECURE_DISCARD := true #修复双清缓慢，非必需
 RECOVERY_USE_VIRTUAL_KEY := true #使用虚拟按键，非必需
-KERNEL_EXFAT_MODULE_NAME := "exfat" #内核exfat模块名称，用于挂载exfat格式扩展，非必需
-KERNEL_NTFS_MODULE_NAME := "ntfs" #内核exfat模块名称，用于挂载ntfs格式扩展，非必需
+KERNEL_EXFAT_MODULE_NAME := "exfat" #内核exfat模块名称，用于挂载exfat格式扩展，非必需，需要修改版vold
+KERNEL_NTFS_MODULE_NAME := "ntfs" #内核exfat模块名称，用于挂载ntfs格式扩展，非必需，需要修改版vold
+COMMON_GLOBAL_CFLAGS += -DNO_SECURE_DISCARD #修复双清缓慢，非必需
+COMMON_GLOBAL_CFLAGS += -DQCOM_HARDWARE #加上这个选项会使用QCOM的时间修复
 
 字库名中含有"fontcn"，会自动使用中文资源编译:
 1920x1080
