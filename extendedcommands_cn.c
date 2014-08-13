@@ -1840,7 +1840,7 @@ int verify_root_and_recovery() {
     int ret = 0;
     struct stat st;
 
-    if (0 != lstat("/system/recovery-from-boot.p", &st))
+    if (0 == lstat("/system/recovery-from-boot.p", &st))
         remove("/system/recovery-from-boot.p");
 
     // check to see if install-recovery.sh is going to clobber recovery

@@ -403,7 +403,8 @@ really_install_package(const char *path)
 
     LOGI("Update location: %s\n", path);
 
-    if (ensure_path_mounted(path) != 0) {
+    struct stat st;
+    if (0 != lstat(path, &st) && ensure_path_mounted(path) != 0) {
         LOGE("Can't mount %s\n", path);
         return INSTALL_CORRUPT;
     }
