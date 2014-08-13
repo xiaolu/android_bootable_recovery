@@ -80,7 +80,7 @@
 #endif
 
 extern struct selabel_handle *sehandle;
-int signature_check_enabled = 1;
+int signature_check_enabled = 0;
 
 typedef struct {
     char mount[255];
@@ -153,7 +153,7 @@ static void write_string_to_file(const char* filename, const char* string) {
 
 void write_recovery_version() {
     char path[PATH_MAX];
-    sprintf(path, "%s%s%s", get_primary_storage_path(), (is_data_media() ? "/0/" : "/"), RECOVERY_VERSION_FILE);
+    sprintf(path, "%s/%s", get_primary_storage_path(), RECOVERY_VERSION_FILE);
     write_string_to_file(path, EXPAND(RECOVERY_VERSION) "\n" EXPAND(TARGET_DEVICE));
     // force unmount /data for /data/media devices as we call this on recovery exit
     preserve_data_media(0);
@@ -163,13 +163,14 @@ void write_recovery_version() {
 
 static void write_last_install_path(const char* install_path) {
     char path[PATH_MAX];
-    sprintf(path, "%s%s%s", get_primary_storage_path(), (is_data_media() ? "/0/" : "/"), RECOVERY_LAST_INSTALL_FILE);
+    //sprintf(path, "%s%s%s", get_primary_storage_path(), (is_data_media() ? "/0/" : "/"), RECOVERY_LAST_INSTALL_FILE);
+    sprintf(path, "%s/%s", get_primary_storage_path(), RECOVERY_LAST_INSTALL_FILE);
     write_string_to_file(path, install_path);
 }
 
 static char* read_last_install_path() {
     static char path[PATH_MAX];
-    sprintf(path, "%s%s%s", get_primary_storage_path(), (is_data_media() ? "/0/" : "/"), RECOVERY_LAST_INSTALL_FILE);
+    sprintf(path, "%s/%s", get_primary_storage_path(), RECOVERY_LAST_INSTALL_FILE);
 
     ensure_path_mounted(path);
     FILE *f = fopen(path, "r");
@@ -579,7 +580,7 @@ int confirm_selection(const char* title, const char* confirm) {
     int ret = 0;
 
     char path[PATH_MAX];
-    sprintf(path, "%s%s%s", get_primary_storage_path(), (is_data_media() ? "/0/" : "/"), RECOVERY_NO_CONFIRM_FILE);
+    sprintf(path, "%s/%s", get_primary_storage_path(), RECOVERY_NO_CONFIRM_FILE);
     ensure_path_mounted(path);
     if (0 == stat(path, &info))
         return 1;
@@ -596,7 +597,7 @@ int confirm_selection(const char* title, const char* confirm) {
     int old_val = ui_is_showing_back_button();
     ui_set_showing_back_button(0);
 
-    sprintf(path, "%s%s%s", get_primary_storage_path(), (is_data_media() ? "/0/" : "/"), RECOVERY_MANY_CONFIRM_FILE);
+    sprintf(path, "%s/%s", get_primary_storage_path(), RECOVERY_MANY_CONFIRM_FILE);
     ensure_path_mounted(path);
     many_confirm = 0 == stat(path, &info);
 
@@ -705,11 +706,34 @@ int format_device(const char *device, const char *path, const char *fs_type) {
             length = v->length;
         }
 
+#ifdef USE_MKE2FS_FORMAT
+		char ext4_cmd[PATH_MAX];
+		sprintf(ext4_cmd, "/sbin/mke2fs -T ext4 -b 4096 -m 0 -F %s", device);
+        int result = __system(ext4_cmd);
+#else
         int result = make_ext4fs(device, length, v->mount_point, sehandle);
+#endif
         if (result != 0) {
-            LOGE("format_volume: make_ext4fs failed on %s\n", device);
+            LOGE("format_volume: format ext4 fs failed on %s\n", device);
             return -1;
         }
+#ifdef USE_MKE2FS_FORMAT
+#ifdef NEED_SELINUX_FIX
+        if (0 == strcmp(v->mount_point, "/data") ||
+            0 == strcmp(v->mount_point, "/system") ||
+            0 == strcmp(v->mount_point, "/cache"))
+        {
+            ensure_path_mounted(v->mount_point);
+            char tmp[PATH_MAX];
+            sprintf(tmp, "%s/lost+found", v->mount_point);
+            if (selinux_android_restorecon(tmp, 0) < 0 || selinux_android_restorecon(v->mount_point, 0) < 0) {
+                LOGW("restorecon: error restoring %s context\n",v->mount_point);
+                //return -1;
+            }
+            ensure_path_unmounted(v->mount_point);
+        }
+#endif
+#endif
         return 0;
     }
 #ifdef USE_F2FS
@@ -769,7 +793,9 @@ int format_unknown_device(const char *device, const char* path, const char *fs_t
 
     char tmp[PATH_MAX];
     if (strcmp(path, "/data") == 0) {
-        sprintf(tmp, "cd /data ; for f in $(ls -a | grep -v ^media$); do rm -rf $f; done");
+        sprintf(tmp, "cd /data ; for f in $(ls -A | grep -v ^media$); do rm -rf $f; done");
+        __system(tmp);
+        sprintf(tmp, "cd /data ; for f in $(ls -A | grep -v ^media$); do chattr -R -i $f; rm -rf $f; done");
         __system(tmp);
         // if the /data/media sdcard has already been migrated for android 4.2,
         // prevent the migration from happening again by writing the .layout_version
@@ -787,13 +813,15 @@ int format_unknown_device(const char *device, const char* path, const char *fs_t
             LOGI("/data/media/0 not found. migration may occur.\n");
         }
     } else {
+        sprintf(tmp, "chattr -R -i %s", path);
+        __system(tmp);
         sprintf(tmp, "rm -rf %s/*", path);
         __system(tmp);
         sprintf(tmp, "rm -rf %s/.*", path);
         __system(tmp);
     }
 
-    ensure_path_unmounted(path);
+    if (strstr(path, ".android_secure") == NULL) ensure_path_unmounted(path);
     return 0;
 }
 
@@ -1204,7 +1232,7 @@ static void choose_default_backup_format() {
     }
 
     char path[PATH_MAX];
-    sprintf(path, "%s%s%s", get_primary_storage_path(), (is_data_media() ? "/0/" : "/"), NANDROID_BACKUP_FORMAT_FILE);
+    sprintf(path, "%s/%s", get_primary_storage_path(), NANDROID_BACKUP_FORMAT_FILE);
     int chosen_item = get_menu_selection(headers, list, 0, 0);
     switch (chosen_item) {
         case 0: {
@@ -1302,20 +1330,36 @@ int show_nandroid_menu() {
             switch (chosen_subitem) {
                 case 0: {
                     char backup_path[PATH_MAX];
+                    char rom_name[PROPERTY_VALUE_MAX] = "noname";
+                    get_rom_name(rom_name);
+
                     time_t t = time(NULL);
                     struct tm *tmp = localtime(&t);
-                    if (tmp == NULL) {
+                    if (tmp == NULL)
+                    {
                         struct timeval tp;
                         gettimeofday(&tp, NULL);
-                        sprintf(backup_path, "%s/clockworkmod/backup/%ld", chosen_path, tp.tv_sec);
+                        sprintf(backup_path, "%s/clockworkmod/backup/%ld_%s", chosen_path, tp.tv_sec, rom_name);
                     } else {
                         char path_fmt[PATH_MAX];
                         strftime(path_fmt, sizeof(path_fmt), "clockworkmod/backup/%F.%H.%M.%S", tmp);
                         // this sprintf results in:
                         // clockworkmod/backup/%F.%H.%M.%S (time values are populated too)
-                        sprintf(backup_path, "%s/%s", chosen_path, path_fmt);
+                        sprintf(backup_path, "%s/%s_%s", chosen_path, path_fmt, rom_name);
                     }
-                    nandroid_backup(backup_path);
+                    int fmt = nandroid_get_default_backup_format();
+                    char *fmt_str;
+                    if (fmt == NANDROID_BACKUP_FORMAT_DUP) {
+                        fmt_str = "dup";
+                    } else if (fmt == NANDROID_BACKUP_FORMAT_TGZ) {
+                        fmt_str = "tar.gz";
+                    } else
+                        fmt_str = "tar";
+                    ui_print("backup format: %s\nbackup directory:\n%s\n", fmt_str, backup_path);
+                    if (confirm_selection( "Confirm backup?", "Yes - Backup"))
+                    {
+						nandroid_backup(backup_path);
+					}
                     break;
                 }
                 case 1:
@@ -1409,7 +1453,7 @@ static void format_sdcard(const char* volume) {
         case 5:
         case 6: {
             // workaround for new vold managed volumes that cannot be recognized by prebuilt ext2/ext3 bins
-            const char *device = v->blk_device2;
+            char *device = v->blk_device2;
             if (device == NULL)
                 device = v->blk_device;
             ret = format_unknown_device(device, v->mount_point, list[chosen_item]);
@@ -1711,6 +1755,8 @@ static void create_fstab() {
     write_fstab_root("/sdcard", file);
     write_fstab_root("/sd-ext", file);
     write_fstab_root("/external_sd", file);
+	write_fstab_root("/preload", file);
+	write_fstab_root("/efs", file);
     fclose(file);
     LOGI("Completed outputting fstab.\n");
 }
@@ -1794,6 +1840,10 @@ int verify_root_and_recovery() {
 
     int ret = 0;
     struct stat st;
+
+    if (0 == lstat("/system/recovery-from-boot.p", &st))
+        remove("/system/recovery-from-boot.p");
+
     // check to see if install-recovery.sh is going to clobber recovery
     // install-recovery.sh is also used to run the su daemon on stock rom for 4.3+
     // so verify that doesn't exist...
@@ -1813,7 +1863,7 @@ int verify_root_and_recovery() {
     int exists = 0;
     if (0 == lstat("/system/bin/su", &st)) {
         exists = 1;
-        if (S_ISREG(st.st_mode)) {
+        /*if (S_ISREG(st.st_mode)) {
             if ((st.st_mode & (S_ISUID | S_ISGID)) != (S_ISUID | S_ISGID)) {
                 ui_show_text(1);
                 ret = 1;
@@ -1821,12 +1871,12 @@ int verify_root_and_recovery() {
                     __system("chmod 6755 /system/bin/su");
                 }
             }
-        }
+        }*/
     }
 
     if (0 == lstat("/system/xbin/su", &st)) {
         exists = 1;
-        if (S_ISREG(st.st_mode)) {
+        /*if (S_ISREG(st.st_mode)) {
             if ((st.st_mode & (S_ISUID | S_ISGID)) != (S_ISUID | S_ISGID)) {
                 ui_show_text(1);
                 ret = 1;
@@ -1834,7 +1884,7 @@ int verify_root_and_recovery() {
                     __system("chmod 6755 /system/xbin/su");
                 }
             }
-        }
+        }*/
     }
 
     if (!exists) {

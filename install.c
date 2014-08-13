@@ -379,6 +379,7 @@ really_install_package(const char *path)
     ui_set_background(BACKGROUND_ICON_INSTALLING);
     ui_print("Finding update package...\n");
     ui_show_indeterminate_progress();
+    ensure_path_unmounted("/system");
 
     // Resolve symlink in case legacy /sdcard path is used
     // Requires: symlink uses absolute path
@@ -402,7 +403,8 @@ really_install_package(const char *path)
 
     LOGI("Update location: %s\n", path);
 
-    if (ensure_path_mounted(path) != 0) {
+    struct stat st;
+    if (0 != lstat(path, &st) && ensure_path_mounted(path) != 0) {
         LOGE("Can't mount %s\n", path);
         return INSTALL_CORRUPT;
     }

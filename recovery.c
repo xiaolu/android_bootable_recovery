@@ -77,6 +77,9 @@ static const char *SIDELOAD_TEMP_DIR = "/tmp/sideload";
 
 extern UIParameters ui_parameters;    // from ui.c
 
+#ifdef QCOM_HARDWARE
+static void parse_t_daemon_data_files();
+#endif
 /*
  * The recovery tool communicates with the main system through /cache files.
  *   /cache/recovery/command - INPUT - command line for tool, one arg per line
@@ -767,7 +770,7 @@ wipe_data(int confirm) {
     if (has_datadata()) {
         erase_volume("/datadata");
     }
-    erase_volume("/sd-ext");
+    if (volume_for_path("/sd-ext") != NULL) erase_volume("/sd-ext");
     erase_volume(get_android_secure_path());
     ui_print("Data wipe complete.\n");
 }
@@ -883,9 +886,9 @@ setup_adbd() {
             check_and_fclose(file_src, key_src);
         }
     }
-    preserve_data_media(0);
-    ensure_path_unmounted("/data");
-    preserve_data_media(1);
+    //preserve_data_media(0);
+    //ensure_path_unmounted("/data");
+    //preserve_data_media(1);
 
     // Trigger (re)start of adb daemon
     property_set("service.adb.root", "1");
@@ -995,7 +998,7 @@ main(int argc, char **argv) {
         }
         return busybox_driver(argc, argv);
     }
-    __system("/sbin/postrecoveryboot.sh");
+    //__system("/sbin/postrecoveryboot.sh");
 
     int is_user_initiated_recovery = 0;
     time_t start = time(NULL);
@@ -1008,20 +1011,25 @@ main(int argc, char **argv) {
     device_ui_init(&ui_parameters);
     ui_init();
     ui_print(EXPAND(RECOVERY_VERSION)"\n");
+	ui_print("Compiled by Xiaolu("EXPAND(RECOVERY_BUILD_DATE)")\n");
+	__system("/sbin/postrecoveryboot.sh");
 
-#ifdef BOARD_RECOVERY_SWIPE
-#ifndef BOARD_TOUCH_RECOVERY
+//#ifdef BOARD_RECOVERY_SWIPE
+//#ifndef BOARD_TOUCH_RECOVERY
     //display directions for swipe controls
     ui_print("Swipe up/down to change selections.\n");
     ui_print("Swipe to the right for enter.\n");
     ui_print("Swipe to the left for back.\n");
-#endif
-#endif
+//#endif
+//#endif
 
     load_volume_table();
     process_volumes();
     vold_init();
     setup_legacy_storage_paths();
+#ifdef QCOM_HARDWARE
+    parse_t_daemon_data_files();
+#endif
     LOGI("Processing arguments.\n");
     ensure_path_mounted(LAST_LOG_FILE);
     rotate_last_logs(10);
@@ -1068,7 +1076,7 @@ main(int argc, char **argv) {
 
     if (!sehandle) {
         fprintf(stderr, "Warning: No file_contexts\n");
-        ui_print("Warning:  No file_contexts\n");
+        //ui_print("Warning:  No file_contexts\n");
     }
 
     LOGI("device_recovery_start()\n");
@@ -1190,4 +1198,96 @@ main(int argc, char **argv) {
 
 void set_perf_mode(int on) {
     property_set("recovery.perf.mode", on ? "1" : "0");
+    if (on)
+        usleep(900000);
 }
+
+#ifdef QCOM_HARDWARE
+// copy from philz cwm recovery
+static void parse_t_daemon_data_files() {
+    // Devices with Qualcomm Snapdragon 800 do some shenanigans with RTC.
+    // They never set it, it just ticks forward from 1970-01-01 00:00,
+    // and then they have files /data/system/time/ats_* with 64bit offset
+    // in miliseconds which, when added to the RTC, gives the correct time.
+    // So, the time is: (offset_from_ats + value_from_RTC)
+    // There are multiple ats files, they are for different systems? Bases?
+    // Like, ats_1 is for modem and ats_2 is for TOD (time of day?).
+    // Look at file time_genoff.h in CodeAurora, qcom-opensource/time-services
+
+    const char *paths[] = {"/data/system/time/", "/data/time/"};
+    char ats_path[PATH_MAX] = "";
+    DIR *d;
+    FILE *f;
+    uint64_t offset = 0;
+    struct timeval tv;
+    struct dirent *dt;
+
+    if (ensure_path_mounted("/data") != 0) {
+        LOGI("parse_t_daemon_data_files: failed to mount /data\n");
+        return;
+    }
+
+    // Prefer ats_2, it seems to be the one we want according to logcat on hammerhead
+    // - it is the one for ATS_TOD (time of day?).
+    // However, I never saw a device where the offset differs between ats files.
+    size_t i;
+    for (i = 0; i < (sizeof(paths)/sizeof(paths[0])); ++i) {
+        DIR *d = opendir(paths[i]);
+        if (!d)
+            continue;
+
+        while ((dt = readdir(d))) {
+            if (dt->d_type != DT_REG || strncmp(dt->d_name, "ats_", 4) != 0)
+                continue;
+
+            if (strlen(ats_path) == 0 || strcmp(dt->d_name, "ats_2") == 0)
+                sprintf(ats_path, "%s%s", paths[i], dt->d_name);
+        }
+
+        closedir(d);
+    }
+
+    if (strlen(ats_path) == 0) {
+        LOGI("parse_t_daemon_data_files: no ats files found, leaving time as-is!\n");
+        return;
+    }
+
+    f = fopen(ats_path, "r");
+    if (!f) {
+        LOGI("parse_t_daemon_data_files: failed to open file %s\n", ats_path);
+        return;
+    }
+
+    if (fread(&offset, sizeof(offset), 1, f) != 1) {
+        LOGI("parse_t_daemon_data_files: failed load uint64 from file %s\n", ats_path);
+        fclose(f);
+        return;
+    }
+    fclose(f);
+
+    //Samsung S5 set date to 2014-xx-xx at boot(init).
+    //We set the base date for RTC time.
+    f = fopen("/sys/class/rtc/rtc0/since_epoch", "r");
+    if (f != NULL) {
+        long int rtc_offset;
+        fscanf(f, "%ld", &rtc_offset);
+        tv.tv_sec = rtc_offset;
+        tv.tv_usec = 0;
+        settimeofday(&tv, NULL);
+        fclose(f);
+        LOGI("applying rtc time %ld\n", rtc_offset);
+    }
+    LOGI("setting time offset from file %s, offset %llu\n", ats_path, offset);
+
+    gettimeofday(&tv, NULL);
+    tv.tv_sec += offset / 1000;
+    tv.tv_usec += (offset % 1000) * 1000;
+
+    while(tv.tv_usec >= 1000000) {
+        ++tv.tv_sec;
+        tv.tv_usec -= 1000000;
+    }
+
+    settimeofday(&tv, NULL);
+}
+#endif

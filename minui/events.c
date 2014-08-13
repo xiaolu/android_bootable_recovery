@@ -46,6 +46,52 @@ static unsigned ev_count = 0;
 static unsigned ev_dev_count = 0;
 static unsigned ev_misc_count = 0;
 
+#define VIBRATOR_TIMEOUT_FILE	"/sys/class/timed_output/vibrator/enable"
+//#define VIBRATOR_TIMEOUT_FILE	"/sys/class/misc/tspdrv/vib_enable"
+
+struct flock* file_lock(short type, short whence)
+{
+    static struct flock ret ;
+    ret.l_type = type ;
+    ret.l_start = 0 ;
+    ret.l_whence = whence ;
+    ret.l_len = 0 ;
+    ret.l_pid = getpid() ;
+    return &ret ;
+}
+
+void *button_vibrate_thread(void *args) {
+    char str[20];
+    int fd;
+    int ret;
+    int timeout_ms;
+    timeout_ms = (int)args;
+    fd = open(VIBRATOR_TIMEOUT_FILE, O_WRONLY | O_TRUNC);
+    if (fd < 0) return ((void *)fd);;
+    fcntl(fd, F_SETLKW, file_lock(F_WRLCK, SEEK_SET));   
+    ret = snprintf(str, sizeof(str), "%d", timeout_ms);
+    ret = write(fd, str, ret);    
+#ifdef LG_VIBRATOR
+    if (ret < 0) goto out;
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 50000;
+    select (0, NULL, NULL, NULL, &tv);
+    ret = write(fd, "0", 1);
+    out:
+#endif
+    fcntl(fd, F_SETLK, file_lock(F_UNLCK, SEEK_SET));
+    close(fd);
+    return ((void *)ret);
+}
+
+int vibrate(int timeout_ms) {
+    pthread_t vibrate_thread;
+    int ret;
+    ret = pthread_create(&vibrate_thread, NULL, &button_vibrate_thread, (void *)timeout_ms);
+    return ret;
+}
+
 int ev_init(ev_callback input_cb, void *data)
 {
     DIR *dir;
