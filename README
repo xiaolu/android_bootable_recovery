@@ -12,4 +12,6 @@ BOARD_USE_CUSTOM_RECOVERY_FONT := \"fontcn46_28x73.h\"
 2560x1440
 BOARD_USE_CUSTOM_RECOVERY_FONT := \"fontcn60_36x87.h\"
 
+编译时把相应分辨率的virtual_key_res/virtual_keys_xxx.png拷贝到配置目录recovery/res/images/下，并改名为virtual_keys.png
+例如device/samsung/klte/recovery/res/images/virtual_keys.png
 
