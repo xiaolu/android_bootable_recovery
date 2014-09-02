@@ -51,6 +51,7 @@ static int calculate_md5(char *str, const char *path) {
     FILE *fd;
     fd = fopen(path, "r");
     if (fd != NULL) {
+        set_perf_mode(1);
         MD5_CTX c;
         size_t i;
         static unsigned char buf[BUFSIZE];
@@ -61,6 +62,7 @@ static int calculate_md5(char *str, const char *path) {
         MD5_Final(&(md5dig[0]), &c);
         fclose(fd);
         to_md5_hash(str, md5dig);
+        set_perf_mode(0);
     } else {
        return 1;
     }
