@@ -46,15 +46,20 @@ fi
 
 BIN=/sbin/supersu/$ARCH
 COM=/sbin/supersu/common
+INS=/system/etc/install-recovery.sh
+if [ -f /system/etc/install_recovery.sh ]; then
+    INS=/system/etc/install_recovery.sh
+fi
 
+mv -n $INS /system/etc/install-recovery-2.sh
 chattr -i /system/xbin/su
 $BIN/chattr.pie -i /system/xbin/su
 chattr -i /system/bin/.ext/.su
 $BIN/chattr.pie -i /system/bin/.ext/.su
 chattr -i /system/xbin/daemonsu
 $BIN/chattr.pie -i /system/xbin/daemonsu
-chattr -i /system/etc/install-recovery.sh
-$BIN/chattr.pie -i /system/etc/install-recovery.sh
+chattr -i $INS
+$BIN/chattr.pie -i $INS
 
 rm -f /system/bin/su
 rm -f /system/xbin/su
@@ -63,7 +68,7 @@ rm -f /system/xbin/sugote
 rm -f /system/xbin/sugote-mksh
 rm -f /system/bin/.ext/.su
 rm -f /system/bin/install-recovery.sh
-rm -f /system/etc/install-recovery.sh
+rm -f $INS
 rm -f /system/etc/init.d/99SuperSUDaemon
 rm -f /system/etc/.installed_su_daemon
 rm -f /system/app/Superuser.apk
@@ -102,8 +107,8 @@ if ($SUGOTE); then
   cp $MKSH /system/xbin/sugote-mksh
 fi
 cp $BIN/su /system/bin/.ext/.su
-cp $COM/install-recovery.sh /system/etc/install-recovery.sh
-ln -s /system/etc/install-recovery.sh /system/bin/install-recovery.sh
+cp $COM/install-recovery.sh $INS
+ln -s $INS /system/bin/install-recovery.sh
 cp $COM/99SuperSUDaemon /system/etc/init.d/99SuperSUDaemon
 echo 1 > /system/etc/.installed_su_daemon
 
@@ -115,7 +120,7 @@ if ($SUGOTE); then
   set_perm 0 0 0755 /system/xbin/sugote-mksh
 fi
 set_perm 0 0 0755 /system/xbin/daemonsu
-set_perm 0 0 0755 /system/etc/install-recovery.sh
+set_perm 0 0 0755 $INS
 set_perm 0 0 0755 /system/etc/init.d/99SuperSUDaemon
 set_perm 0 0 0644 /system/etc/.installed_su_daemon
 
@@ -126,7 +131,7 @@ if ($SUGOTE); then
 	ch_con /system/xbin/sugote-mksh
 fi
 ch_con /system/xbin/daemonsu
-ch_con /system/etc/install-recovery.sh
+ch_con $INS
 ch_con /system/etc/init.d/99SuperSUDaemon
 ch_con /system/etc/.installed_su_daemon
 
