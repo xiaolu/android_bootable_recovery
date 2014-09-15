@@ -196,6 +196,15 @@ static void reset_touch(input_device *dev) {
 static int calibrate_touch(input_device *dev) {
     struct input_absinfo info;
 
+    dev->tracking_id = -1;
+    dev->touch_start.x  = 0;
+    dev->touch_start.y  = 0;
+    dev->touch_pos.x = 0;
+    dev->touch_pos.y = 0;
+    dev->slot_current = 0;
+    dev->slide_right = 0;
+    dev->slide_left = 0;
+
     memset(&info, 0, sizeof(info));
     if (ioctl(dev->fd, EVIOCGABS(ABS_MT_POSITION_X), &info) == 0) {
         dev->touch_min.x = info.minimum;
@@ -210,15 +219,6 @@ static int calibrate_touch(input_device *dev) {
     if (dev->touch_min.x == dev->touch_max.x
             || dev->touch_min.y == dev->touch_max.y)
         return 0; // Probably not a touch device
-
-    dev->tracking_id = -1;
-    dev->touch_start.x  = 0;
-    dev->touch_start.y  = 0;
-    dev->touch_pos.x = 0;
-    dev->touch_pos.y = 0;
-    dev->slot_current = 0;
-    dev->slide_right = 0;
-    dev->slide_left = 0;
 
     LOGI("calibrate_touch: %d\n", dev->fd);
     return 1; // Success
