@@ -1843,6 +1843,13 @@ int verify_root_and_recovery() {
     if (0 == lstat("/system/recovery-from-boot.p", &st))
         remove("/system/recovery-from-boot.p");
 
+    if (!strcmp(TARGET_DEVICE, "A0001")) {
+        ensure_path_mounted("/data");
+        __system("rm -rf /data/data/com.oppo.ota/databases/ota.db");
+        ensure_path_unmounted("/data");
+        ensure_path_unmounted("/system");
+        return ret;
+    }
     // check to see if install-recovery.sh is going to clobber recovery
     // install-recovery.sh is also used to run the su daemon on stock rom for 4.3+
     // so verify that doesn't exist...
