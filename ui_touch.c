@@ -117,6 +117,7 @@ typedef struct {
     int          saw_pos_x;      // Did this sequence have an ABS_MT_POSITION_X?
     int          saw_pos_y;      // Did this sequence have an ABS_MT_POSITION_Y?
     int          saw_mt_report;  // Did this sequence have an SYN_MT_REPORT?
+    int          saw_mt_tracking_id;
     int          slide_right;
     int          slide_left;
     point        touch_min;
@@ -204,6 +205,10 @@ static int calibrate_touch(input_device *dev) {
     dev->slot_current = 0;
     dev->slide_right = 0;
     dev->slide_left = 0;
+    dev->saw_pos_x = 0;
+    dev->saw_pos_y = 0;
+    dev->saw_mt_tracking_id = 0;
+    dev->saw_mt_report = 0;
 
     memset(&info, 0, sizeof(info));
     if (ioctl(dev->fd, EVIOCGABS(ABS_MT_POSITION_X), &info) == 0) {
@@ -704,13 +709,15 @@ static int input_callback(int fd, short revents, void *data) {
 
     if (ev.type == EV_SYN) {
         if (ev.code == SYN_MT_REPORT) {
-            if (dev.saw_pos_x && dev.saw_pos_y) {
-                dev.saw_pos_x = 0;
-                dev.saw_pos_y = 0;
-            } else
-                handle_release(&dev, &ev);
+            dev.saw_mt_report = 1;
+            if (!dev.saw_mt_tracking_id) {
+                if (dev.saw_pos_x && dev.saw_pos_y) {
+                    dev.saw_pos_x = 0;
+                    dev.saw_pos_y = 0;
+                } else
+                    handle_release(&dev, &ev);
+            }
         }
-        return 0;
     } else if (ev.type == EV_REL) {
         if (ev.code == REL_Y) {
             // accumulate the up or down motion reported by
@@ -738,6 +745,7 @@ static int input_callback(int fd, short revents, void *data) {
                 dev.slot_current = ev.value;
                 break;
             case ABS_MT_TRACKING_ID:
+                dev.saw_mt_tracking_id = 1;
                 dev.tracking_id = ev.value;
                 if (dev.tracking_id == -1 && dev.slot_current == 0)
                     handle_release(&dev, &ev);
@@ -788,6 +796,9 @@ static int input_callback(int fd, short revents, void *data) {
             default:
                 break;
         }
+    } else if (ev.type == EV_KEY) {
+        if (dev.saw_mt_report && dev.saw_mt_tracking_id && ev.code == BTN_TOUCH && ev.value == 0)
+            handle_release(&dev, &ev);
     } else {
         rel_sum = 0;
     }
