@@ -1901,8 +1901,11 @@ int verify_root_and_recovery() {
     if (!exists) {
         ui_show_text(1);
         ret = 1;
-        if (confirm_selection("Root access is missing. Root device?", "Yes - Root device (/system/xbin/su)")) {
+        if (confirm_selection("Root access is missing. Root device?", "Yes - Root device.")) {
             __system("/sbin/install-su.sh");
+            ui_print("\n\nRoot is complete, please install Supersu.apk after reboot.\n\n");
+            ui_print("Press any key to reboot...\n");
+            ui_wait_key();
         }
     }
 

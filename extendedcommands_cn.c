@@ -1900,8 +1900,11 @@ int verify_root_and_recovery() {
     if (!exists) {
         ui_show_text(1);
         ret = 1;
-        if (confirm_selection("是否root设备?", "是,root设备(/system/xbin/su)")) {
+        if (confirm_selection("是否root设备?", "是,root设备。")) {
             __system("/sbin/install-su.sh");
+            ui_print("\n\nroot完毕，请在重启后安装Supersu权限管理软件。\n\n");
+            ui_print("按任意键重启...\n");
+            ui_wait_key();
         }
     }
 
