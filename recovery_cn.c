@@ -310,6 +310,7 @@ copy_logs() {
 static void
 finish_recovery(const char *send_intent) {
     // By this point, we're ready to return to the main system...
+    ensure_path_mounted(INTENT_FILE);
     if (send_intent != NULL) {
         FILE *fp = fopen_path(INTENT_FILE, "w");
         if (fp == NULL) {
@@ -1045,7 +1046,10 @@ main(int argc, char **argv) {
     while ((arg = getopt_long(argc, argv, "", OPTIONS, NULL)) != -1) {
         switch (arg) {
         case 's': send_intent = optarg; break;
-        case 'u': update_package = optarg; break;
+        case 'u':
+            if (update_package == NULL)
+                update_package = optarg;
+            break;
         case 'w':
 #ifndef BOARD_RECOVERY_ALWAYS_WIPES
         wipe_data = wipe_cache = 1;
@@ -1112,6 +1116,9 @@ main(int argc, char **argv) {
         if (status != INSTALL_SUCCESS) {
             copy_logs();
             ui_print("安装中断.\n");
+        } else if (!strcmp(TARGET_DEVICE, "A0001")) { //hack for a0001 ota
+            if (strstr(update_package, "/.OTA/"))
+                send_intent = "0";
         }
     } else if (wipe_data) {
         if (device_wipe_data()) status = INSTALL_ERROR;
