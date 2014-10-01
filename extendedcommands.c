@@ -1838,19 +1838,23 @@ int verify_root_and_recovery() {
     if (ensure_path_mounted("/system") != 0)
         return 0;
 
+    ui_set_background(BACKGROUND_ICON_CLOCKWORK);
     int ret = 0;
+
     struct stat st;
-
-    if (0 == lstat("/system/recovery-from-boot.p", &st))
-        remove("/system/recovery-from-boot.p");
-
+    if (0 == lstat("/system/recovery-from-boot.p", &st)) {
+        ui_show_text(1);
+        ret = 1;
+        if (confirm_selection("ROM may flash stock recovery on boot. Fix?", "Yes")) {
+            __system("rm -rf /system/recovery-from-boot.p");
+        }
+    }
+    //hack for a0001
     if (!strcmp(TARGET_DEVICE, "A0001")) {
-        ensure_path_mounted("/data");
-        __system("rm -rf /data/data/com.oppo.ota/databases/ota.db");
-        ensure_path_unmounted("/data");
         ensure_path_unmounted("/system");
         return ret;
     }
+
     // check to see if install-recovery.sh is going to clobber recovery
     // install-recovery.sh is also used to run the su daemon on stock rom for 4.3+
     // so verify that doesn't exist...
