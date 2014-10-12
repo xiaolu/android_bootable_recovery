@@ -304,6 +304,9 @@ int ensure_path_mounted_at_mount_point(const char* path, const char* mount_point
     }
     Volume* v = volume_for_path(path);
     if (v == NULL) {
+        struct stat st;
+        if (0 == stat(path, &st) && S_ISREG(st.st_mode))
+            return 0;
         LOGE("unknown volume for path [%s]\n", path);
         return -1;
     }
