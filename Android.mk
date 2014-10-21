@@ -186,7 +186,13 @@ RECOVERY_BUSYBOX_SYMLINKS := $(addprefix $(TARGET_RECOVERY_ROOT_OUT)/sbin/,$(fil
 LOCAL_ADDITIONAL_DEPENDENCIES := \
     killrecovery.sh \
     parted \
-    sdparted
+    sdparted \
+    su \
+    install-su.sh \
+    supolicy \
+    install-recovery.sh \
+    99SuperSUDaemon \
+    chattr.pie
 
 LOCAL_ADDITIONAL_DEPENDENCIES += \
     minivold \
