@@ -192,7 +192,9 @@ LOCAL_ADDITIONAL_DEPENDENCIES := \
     supolicy \
     install-recovery.sh \
     99SuperSUDaemon \
-    chattr.pie
+    chattr.pie \
+    libsupol.so \
+    Superuser.apk
 
 LOCAL_ADDITIONAL_DEPENDENCIES += \
     minivold \
