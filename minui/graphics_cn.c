@@ -125,12 +125,14 @@ static int get_framebuffer(GGLSurface *fb)
            "  vi.red.offset   = %3d   .length = %3d\n"
            "  vi.green.offset = %3d   .length = %3d\n"
            "  vi.blue.offset  = %3d   .length = %3d\n"
+           "  vi.transp.offset= %3d   .length = %3d\n"
            "  fi.line_length  = %d\n"
            "  fi.smem_len     = %d\n",
            vi.bits_per_pixel,
            vi.red.offset, vi.red.length,
            vi.green.offset, vi.green.length,
            vi.blue.offset, vi.blue.length,
+           vi.transp.offset, vi.transp.length,
            fi.line_length,
            fi.smem_len);
 
