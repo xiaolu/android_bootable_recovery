@@ -379,7 +379,8 @@ really_install_package(const char *path)
     ui_set_background(BACKGROUND_ICON_INSTALLING);
     ui_print("找到刷机包...\n");
     ui_show_indeterminate_progress();
-    ensure_path_unmounted("/system");
+    if (strcmp(TARGET_DEVICE, "A0001") == 0)
+        ensure_path_unmounted("/system");
 
     // Resolve symlink in case legacy /sdcard path is used
     // Requires: symlink uses absolute path
