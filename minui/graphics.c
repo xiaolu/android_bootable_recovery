@@ -39,17 +39,6 @@
 
 #include "minui.h"
 
-#if defined(RECOVERY_BGRA)
-#define PIXEL_FORMAT GGL_PIXEL_FORMAT_BGRA_8888
-#define PIXEL_SIZE   4
-#elif defined(RECOVERY_RGBX)
-#define PIXEL_FORMAT GGL_PIXEL_FORMAT_RGBX_8888
-#define PIXEL_SIZE   4
-#else
-#define PIXEL_FORMAT GGL_PIXEL_FORMAT_RGB_565
-#define PIXEL_SIZE   2
-#endif
-
 #define NUM_BUFFERS 2
 #define ALIGN(x, align) (((x) + ((align)-1)) & ~((align)-1))
 #define MAX_DISPLAY_DIM  2048
@@ -61,6 +50,8 @@ typedef struct {
     unsigned ascent;
 } GRFont;
 
+int PIXEL_FORMAT = GGL_PIXEL_FORMAT_UNKNOWN;
+static int PIXEL_SIZE = 0;
 static GRFont *gr_font = 0;
 static GGLContext *gr_context = 0;
 static GGLSurface gr_font_texture;
@@ -118,12 +109,50 @@ static int get_framebuffer(GGLSurface *fb)
            "  vi.red.offset   = %3d   .length = %3d\n"
            "  vi.green.offset = %3d   .length = %3d\n"
            "  vi.blue.offset  = %3d   .length = %3d\n"
-           "  fi.smem_len = %d\n",
+           "  vi.transp.offset= %3d   .length = %3d\n"
+           "  fi.line_length  = %d\n"
+           "  fi.smem_len     = %d\n",
            vi.bits_per_pixel,
            vi.red.offset, vi.red.length,
            vi.green.offset, vi.green.length,
            vi.blue.offset, vi.blue.length,
+           vi.transp.offset, vi.transp.length,
+           fi.line_length,
            fi.smem_len);
+
+    PIXEL_SIZE = vi.bits_per_pixel / 8;
+    switch(vi.bits_per_pixel)
+    {
+        case 16:
+            if (vi.green.length == 4)
+                PIXEL_FORMAT = GGL_PIXEL_FORMAT_RGBA_4444;
+            if (vi.green.length == 5)
+                PIXEL_FORMAT = GGL_PIXEL_FORMAT_RGBA_5551;
+            if (vi.green.length == 6)
+                PIXEL_FORMAT = GGL_PIXEL_FORMAT_RGB_565;
+            break;
+        case 24:
+            PIXEL_FORMAT = GGL_PIXEL_FORMAT_RGB_888;
+            break;
+        case 32:
+            if (vi.red.offset == 0)
+                PIXEL_FORMAT = GGL_PIXEL_FORMAT_RGBA_8888;
+            else if (vi.red.offset == 8)
+                PIXEL_FORMAT = GGL_PIXEL_FORMAT_BGRA_8888;
+            else if (vi.red.offset == 16) {
+                PIXEL_FORMAT = GGL_PIXEL_FORMAT_BGRA_8888;
+                if (vi.transp.length == 0) // 3x8-bit RGB stored in 32-bit chunks(samsung 5433 7420)
+                    PIXEL_FORMAT = GGL_PIXEL_FORMAT_RGBX_8888;
+            }
+            else if (vi.red.offset == 24)
+                PIXEL_FORMAT = GGL_PIXEL_FORMAT_RGBX_8888;
+            break;
+        default:
+            perror("unsupported PIXEL FORMAT");
+            close(fd);
+            return -1;
+            break;
+    }
 
     has_overlay = target_has_overlay(fi.id);
 
@@ -131,56 +160,16 @@ static int get_framebuffer(GGLSurface *fb)
         setDisplaySplit();
 
     if (!has_overlay) {
-       vi.bits_per_pixel = PIXEL_SIZE * 8;
-       if (PIXEL_FORMAT == GGL_PIXEL_FORMAT_BGRA_8888) {
-         vi.red.offset     = 8;
-         vi.red.length     = 8;
-         vi.green.offset   = 16;
-         vi.green.length   = 8;
-         vi.blue.offset    = 24;
-         vi.blue.length    = 8;
-         vi.transp.offset  = 0;
-         vi.transp.length  = 8;
-       } else if (PIXEL_FORMAT == GGL_PIXEL_FORMAT_RGBX_8888) {
-         vi.red.offset     = 24;
-         vi.red.length     = 8;
-         vi.green.offset   = 16;
-         vi.green.length   = 8;
-         vi.blue.offset    = 8;
-         vi.blue.length    = 8;
-         vi.transp.offset  = 0;
-         vi.transp.length  = 8;
-       } else { /* RGB565*/
-         vi.red.offset     = 11;
-         vi.red.length     = 5;
-         vi.green.offset   = 5;
-         vi.green.length   = 6;
-         vi.blue.offset    = 0;
-         vi.blue.length    = 5;
-         vi.transp.offset  = 0;
-         vi.transp.length  = 0;
-       }
-       vi.vmode = FB_VMODE_NONINTERLACED;
-       vi.activate = FB_ACTIVATE_NOW | FB_ACTIVATE_FORCE;
-       if (ioctl(fd, FBIOPUT_VSCREENINFO, &vi) < 0) {
-           perror("failed to put fb0 info");
-           close(fd);
-           return -1;
-       }
-       if (ioctl(fd, FBIOGET_FSCREENINFO, &fi) < 0) {
-           perror("failed to get fb0 info");
-           close(fd);
-           return -1;
-       }
-
-       bits = mmap(0, fi.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-       if (bits == MAP_FAILED) {
+        printf("Not using qualcomm overlay, '%s'\n", fi.id);
+        bits = mmap(0, fi.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        if (bits == MAP_FAILED) {
            perror("failed to mmap framebuffer");
            close(fd);
            return -1;
-       }
+        }
     } else {
-         fi.line_length = ALIGN(vi.xres, 32) * PIXEL_SIZE;
+        printf("Using qualcomm overlay\n");
+        fi.line_length = ALIGN(vi.xres, 32) * PIXEL_SIZE;
     }
 
     overscan_offset_x = vi.xres * overscan_percent / 100;
